@@ -174,8 +174,8 @@ details li{margin:6px 0;color:#c6cdd5}
       <li>斜め移動は不可（経路上で曲がるのは自由）。<b>味方のいるマスには入れない</b>。</li>
       <li>敵のいるマスに踏み込むと撃破。<b>止まらずそのまま進める</b>ので、1回の移動で複数撃破できる。</li>
       <li><b>潜伏所T（緑丸）</b>：入るのに1歩、入ったターンは出られない。<b>出る時は2歩ぶんの移動力を消費</b>（残り1歩では出られない）。1部屋1人。中は誰からも見えない。敵が踏み込むと中の兵は撃破される。</li>
-      <li><b>越境</b>：敵側の廊下に<b>侵入者がいる間だけ</b>、その階の廊下60マスが両軍に開示。撃破・退出・部屋への潜伏などで誰もいなくなれば、<b>再び見えなくなる</b>（階ごとに独立）。</li>
-      <li><b>階段（横一列の帯）</b>：越境の対象外。入口2マス（A3/A4・C3/C4・B27/B28・D27/D28）にいる間だけ、踊り場（＝本殿）までの手前半分が見える（相互）。敵も階段に入れる。</li>
+      <li><b>廊下の視界</b>：廊下は<b>自分の駒がその廊下に立っている間だけ</b>全体が見える。<b>自陣の廊下でも、誰もいなければ見えない</b>。真ん中の壁には<b>暗幕</b>が垂れており、誰かが壁を越えて暗幕が破れると、以後その階では廊下に立てば<b>反対側の廊下まで見通せる</b>（1階・2階で独立）。</li>
+      <li><b>階段（横一列の帯）</b>：入口2マス（A3/A4・C3/C4・B27/B28・D27/D28）にいる間だけ、踊り場（＝本殿）までの手前半分が見える（相互）。敵も階段に入れる。</li>
       <li><b>X/Y部屋</b>：ふすま越しには中が見えない。自分の駒が中にいる間だけ部屋全体が見える。<b>出る時は2歩ぶんの移動力を消費</b>。X⇄Yは直接行き来できず、奥は行き止まり。</li>
       <li><b>勝利</b>：①敵の🚩旗持ちを撃破　②敵の本殿（P5/P6・Q5/Q6）に到達（通過でも可）　③敵の全滅。15ラウンド満了時は「生存数 → 敵陣内の生存数 → <b>引き分け</b>」の順で判定。</li>
       <li>画面には「<b>目で見えるもの</b>」だけが描かれます。推理で分かる情報（どのTに入ったか等）は各自で追ってください。</li>
@@ -270,8 +270,8 @@ details li{margin:6px 0;color:#c6cdd5}
       <li>1ターンで自軍全員を動かせる。1マスずつタップ（基本4歩、📣は6歩）。斜め不可・後退可・味方は障害。</li>
       <li>敵マスに踏み込むと撃破し、止まらず進める（複数撃破可）。</li>
       <li>潜伏所T：入るのに1歩・入ったターンは出られない・<b>出る時は2歩ぶん消費</b>・1部屋1人・中は不可視。敵が入ると中の兵は撃破。</li>
-      <li>越境：敵側廊下に<b>侵入者がいる間だけ</b>その階の廊下が相互開示。誰もいなくなれば再び隠れる。</li>
-      <li>階段：入口2マスにいる間だけ本殿（踊り場）まで見える。越境の対象外。X/Y部屋は自分の駒が中にいる間だけ見える。<b>部屋から出る時は2歩ぶん消費</b>。</li>
+      <li>廊下の視界：<b>自分の駒が立っている廊下だけ</b>見える。壁の暗幕が破られた後は、その階の廊下に立てば反対側まで見通せる。</li>
+      <li>階段：入口2マスにいる間だけ本殿（踊り場）まで見える。X/Y部屋は自分の駒が中にいる間だけ見える。<b>部屋から出る時は2歩ぶん消費</b>。</li>
       <li>勝利：🚩撃破／敵本殿到達（通過可）／全滅。15R満了時は 生存数→敵陣内生存数→<b>引き分け</b>。</li>
     </ul>
   </details>
@@ -678,9 +678,10 @@ const RULES = (function() {
         if (leavingRoom) s.steps--; /* 退出は2歩ぶん消費 */
         const q = SQ[to];
         if (q.kind === 'T') s.locked = true;
-        if (q.kind === 'corridor' && q.team !== s.team && !g.crossed[q.floor]) {
+        /* ▼ 暗幕: 壁リンク（A29/A30⇄B1/B2・C29/C30⇄D1/D2）を通過すると、その階の暗幕が破れる */
+        if (qFrom.kind === 'corridor' && q.kind === 'corridor' && qFrom.corridor !== q.corridor && !g.crossed[q.floor]) {
             g.crossed[q.floor] = true;
-            g.log.push('🔶 越境発生！ ' + q.floor + '階の廊下（' + (q.floor === 1 ? 'A・B' : 'C・D') + '）は、侵入者がいる間だけ相互開示されます');
+            g.log.push('🔶 ' + q.floor + '階の暗幕が破られた！ 以後この階では、廊下に立てば反対側の廊下まで見通せます');
         }
         if (foe && foe.role === 'flag') gwin(g, s.team, '敵の🚩旗持ちを撃破');
         else if (q.kind === 'honden' && q.team !== s.team) gwin(g, s.team, plbl(s) + ' が敵の本殿 ' + to + ' に到達');
@@ -739,15 +740,22 @@ const RULES = (function() {
     /* 視認できるマス集合 */
     function visibleSquares(g, team) {
         const vis = new Set();
-        /* ▼ ルール改定: 廊下は「その階の敵側廊下に侵入者が立っている間だけ」相互開示 */
-        const invaded = { 1: false, 2: false };
+        /* ▼ 廊下の視界: 自分の駒が立っている廊下だけ見える（自陣でも無人なら見えない）。
+           A-B / C-D はひと続きの廊下だが、間の壁に暗幕が垂れている。
+           暗幕が破れた後（g.crossed）は、その階の廊下に立てば反対側の廊下まで見通せる */
+        const CORR_PARTNER = { A: 'B', B: 'A', C: 'D', D: 'C' };
+        const CORR_FLOOR = { A: 1, B: 1, C: 2, D: 2 };
+        const myCorr = {};
         for (const sv of g.soldiers) {
-            if (!sv.alive) continue;
+            if (!sv.alive || sv.team !== team) continue;
             const qq = SQ[sv.pos];
-            if (qq.kind === 'corridor' && qq.team !== sv.team) invaded[qq.floor] = true;
+            if (qq.kind === 'corridor') myCorr[qq.corridor] = true;
         }
         for (const q of Object.values(SQ)) {
-            if (q.kind === 'corridor' && (q.team === team || invaded[q.floor])) vis.add(q.id);
+            if (q.kind !== 'corridor') continue;
+            const c = q.corridor;
+            if (myCorr[c]) vis.add(q.id);
+            else if (g.crossed[CORR_FLOOR[c]] && myCorr[CORR_PARTNER[c]]) vis.add(q.id);
         }
         const mine = g.soldiers.filter(s => s.alive && s.team === team);
         const at = id => mine.some(s => s.pos === id);
@@ -2463,7 +2471,7 @@ if (typeof module !== 'undefined' && module.exports) {
                 fl = wm[1],
                 cr = crossed[fl];
             out += '<rect x="' + x + '" y="697" width="90" height="10" rx="3" fill="' + COL.wall + '" opacity="' + (cr ? 0.28 : 1) + '"/>';
-            out += '<text x="' + (x - 6) + '" y="706" text-anchor="end" font-size="10" fill="' + (cr ? COL.wall : '#8a929c') + '">' + (cr ? '越境済' : '壁') + '</text>';
+            out += '<text x="' + (x - 6) + '" y="706" text-anchor="end" font-size="10" fill="' + (cr ? COL.wall : '#8a929c') + '">' + (cr ? '暗幕破れ' : '暗幕') + '</text>';
         });
         out += '<rect x="248" y="944" width="244" height="8" fill="' + COL.greenWall + '"/>';
         /* キャプション */
