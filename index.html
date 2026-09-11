@@ -3025,6 +3025,13 @@ if (typeof module !== 'undefined' && module.exports) {
         el.innerHTML = h;
     }
 
+    /* いま画面に掛かっているフォグの視点チーム。null なら全部見えている */
+    function fogTeamOf(g) {
+        if (!g) return null;
+        if (APP.mode === 'online' || APP.mode === 'cpu') return (g.phase === 'over' && APP.view === 'god') ? null : APP.myTeam;
+        return (APP.view !== 'god' && g.phase !== 'over') ? APP.view : null;
+    }
+
     /* ---------- 相手の移動を軌跡アニメーションで再生 ---------- */
     function stopAnim() {
         if (APP._animT) { clearTimeout(APP._animT); APP._animT = null; }
@@ -3038,6 +3045,10 @@ if (typeof module !== 'undefined' && module.exports) {
         APP.animPos = {};
         /* 再生前の視点を覚えておき、終わったら元に戻す（自分の駒を見失わないように） */
         var cam = { x: PZ.x, y: PZ.y, w: PZ.w };
+        /* フォグの外＝見えていないマスへはカメラを動かさない。
+           動かすと、開示されていない敵の居場所が画面の動きで分かってしまうため */
+        var ft = fogTeamOf(gg);
+        var camVis = ft ? RULES.visibleSquares(gg, ft) : null;
         var i = 0;
         /* 手数が多いときはテンポを上げ、全体で2秒前後に収める */
         var wait = Math.max(70, Math.min(180, Math.round(2000 / tr.length)));
@@ -3054,7 +3065,7 @@ if (typeof module !== 'undefined' && module.exports) {
             }
             var e = tr[i++];
             APP.animPos[e.sid] = e.to;
-            if (APP.followCam !== false) panTo(e.to);   /* 動いた先へカメラを追従 */
+            if (APP.followCam !== false && (!camVis || camVis.has(e.to))) panTo(e.to);
             renderBoard();
             APP._animT = setTimeout(tick, wait);
         }
@@ -3479,11 +3490,7 @@ if (typeof module !== 'undefined' && module.exports) {
         var b = $('board');
         if (!b) return;
         var g = APP.g;
-        var fogTeam = null;
-        if (g) {
-            if (APP.mode === 'online' || APP.mode === 'cpu') fogTeam = (g.phase === 'over' && APP.view === 'god') ? null : APP.myTeam;
-            else fogTeam = (APP.view !== 'god' && g.phase !== 'over') ? APP.view : null;
-        }
+        var fogTeam = fogTeamOf(g);
         var vis = (g && fogTeam) ? RULES.visibleSquares(g, fogTeam) : null;
         var out = '';
         /* 接続（下層） */
