@@ -97,6 +97,29 @@ details li{margin:6px 0;color:#c6cdd5}
 .card .big2{font-size:20px;font-weight:700;margin-bottom:8px}
 #bannerBody{margin:8px 0 16px;font-size:14.5px;line-height:2}
 #bannerBody div:first-child{font-size:18px;font-weight:700;color:var(--gold)}
+/* 編成画面 */
+#scrSquad .sqTeamPick{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 14px}
+#scrSquad .sqTeamPick button{flex:1;min-width:88px}
+.slotCard{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0}
+.slotCard.fixedRole{border-color:#4a5665;background:#232a33}
+.slotHead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.slotNo{font-size:11px;color:var(--mut);letter-spacing:1px;min-width:72px}
+.slotName{font-weight:700;font-size:15px}
+.slotMeta{font-size:12px;color:var(--mut)}
+.slotRow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.slotRow select{flex:1;min-width:150px}
+.slotRow label{font-size:11px;color:var(--mut);min-width:52px}
+.wpNote{font-size:11.5px;color:#c6cdd5;margin-top:6px;line-height:1.5;
+  border-left:2px solid var(--gold);padding-left:8px}
+.wpNone{color:var(--mut);border-left-color:var(--line)}
+.sqPreview{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;color:var(--gold);
+  background:#171b20;border:1px solid var(--line);border-radius:6px;padding:5px 8px;margin-top:8px;
+  overflow-x:auto;white-space:nowrap}
+#squadMsg{margin:10px 0}
+/* 対戦中の装備発動バー */
+.wpBar{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.wpBar .tag{font-size:11px;color:var(--gold);border:1px solid var(--gold);border-radius:999px;padding:2px 8px}
+#targetNote{color:var(--gold);font-weight:700}
 </style>
 </head>
 <body>
@@ -195,10 +218,15 @@ details li{margin:6px 0;color:#c6cdd5}
 
 <section id="scrCreate" class="screen hidden">
   <h2>部屋を作る</h2>
-  <div class="opt"><span>自分のチーム</span>
+  <div class="opt"><span>自分の陣地</span>
     <button id="optTB" data-act="opt-team-blue">青</button>
     <button id="optTR" data-act="opt-team-red">赤</button>
     <button id="optTX" data-act="opt-team-random" class="on">おまかせ</button>
+  </div>
+  <div class="opt"><span>自分のチーム</span>
+    <button id="optLA" data-act="opt-letter-A" class="on">A</button>
+    <button id="optLB" data-act="opt-letter-B">B</button>
+    <button id="optLC" data-act="opt-letter-C">C</button>
   </div>
   <div class="opt"><span>先攻</span>
     <button id="optFC" data-act="opt-first-coin" class="on">🪙 コイントス</button>
@@ -210,13 +238,32 @@ details li{margin:6px 0;color:#c6cdd5}
   <button data-act="home" class="ghost">← 戻る</button>
 </section>
 
+<section id="scrSquad" class="screen hidden">
+  <h2>編成</h2>
+  <p class="lead" id="squadLead">出陣させる8人と、それぞれの装備品を決めます。</p>
+  <div id="squadTeamWrap">
+    <h3>自分のチーム</h3>
+    <div class="sqTeamPick" id="squadTeamPick"></div>
+  </div>
+  <div id="squadSlots"></div>
+  <div id="squadMsg" class="mut small"></div>
+  <button data-act="squad-done" class="primary big">配置へ進む</button>
+  <button data-act="squad-auto" class="big">🎲 おまかせ編成</button>
+  <button data-act="squad-back" class="ghost">← 戻る</button>
+</section>
+
 <section id="scrCpu" class="screen hidden">
   <h2>AIと対戦</h2>
   <p class="lead">1万局の自己対戦で鍛えた思考ルーチン「SMART」と1人で対戦できます。AIもあなたと同じ「見えるものだけ」で戦います（潜伏所・部屋・階段の中はのぞけません）。</p>
-  <div class="opt"><span>自分のチーム</span>
+  <div class="opt"><span>自分の陣地</span>
     <button id="cpuTB" data-act="cpu-team-blue" class="on">青</button>
     <button id="cpuTR" data-act="cpu-team-red">赤</button>
     <button id="cpuTX" data-act="cpu-team-random">おまかせ</button>
+  </div>
+  <div class="opt"><span>自分のチーム</span>
+    <button id="cpuLA" data-act="cpu-letter-A" class="on">A</button>
+    <button id="cpuLB" data-act="cpu-letter-B">B</button>
+    <button id="cpuLC" data-act="cpu-letter-C">C</button>
   </div>
   <div class="opt"><span>先攻</span>
     <button id="cpuFM" data-act="cpu-first-me">あなた</button>
@@ -502,6 +549,143 @@ if (typeof module !== 'undefined' && module.exports) {
     };
 }
 
+/* ===== 名簿（チームA/B/C） =====
+   year: 79|80　sex: 'M'=男 / 'F'=女
+   ※「オールバック」＝男（【小野寺のハードジェル】の対象判定に使用） */
+const ROSTER = {
+    A: [
+        { name: '石井',   year: 79, sex: 'M', fixed: 'mega' },
+        { name: '内藤',   year: 79, sex: 'M' },
+        { name: '純平',   year: 79, sex: 'M' },
+        { name: '松本',   year: 79, sex: 'F' },
+        { name: '福西',   year: 79, sex: 'F' },
+        { name: '有働',   year: 80, sex: 'M', fixed: 'flag' },
+        { name: '坂後',   year: 80, sex: 'M' },
+        { name: '陶山',   year: 80, sex: 'F' },
+        { name: '佐藤',   year: 80, sex: 'F' }
+    ],
+    B: [
+        { name: '関原',   year: 79, sex: 'M', fixed: 'mega' },
+        { name: '武',     year: 79, sex: 'M' },
+        { name: '宮永',   year: 79, sex: 'F' },
+        { name: '常岡',   year: 79, sex: 'F' },
+        { name: '松元',   year: 79, sex: 'F' },
+        { name: '樋口',   year: 80, sex: 'M', fixed: 'flag' },
+        { name: '市毛',   year: 80, sex: 'M' },
+        { name: '加藤',   year: 80, sex: 'M' },
+        { name: '木村',   year: 80, sex: 'F' },
+        { name: '川村',   year: 80, sex: 'F' }
+    ],
+    C: [
+        { name: '小野寺', year: 79, sex: 'M', fixed: 'mega' },
+        { name: '川名',   year: 79, sex: 'M' },
+        { name: '矢野',   year: 79, sex: 'M' },
+        { name: '八幡',   year: 79, sex: 'F' },
+        { name: '小林',   year: 79, sex: 'F' },
+        { name: 'アダ',   year: 80, sex: 'M', fixed: 'flag' },
+        { name: '宮地',   year: 80, sex: 'M' },
+        { name: '新垣',   year: 80, sex: 'M' },
+        { name: '坂井',   year: 80, sex: 'F' },
+        { name: '鵜澤',   year: 80, sex: 'F' }
+    ]
+};
+const SQUADS = ['A', 'B', 'C'];
+
+function rosterOf(L) { return ROSTER[L] || ROSTER.A; }
+function memberOf(L, name) { return rosterOf(L).filter(function(m) { return m.name === name; })[0] || null; }
+function fixedOf(L, role) { return rosterOf(L).filter(function(m) { return m.fixed === role; })[0] || null; }
+/* プレイヤー1〜6に選べる面々（メガホン・旗持ちを除く） */
+function freeRoster(L) { return rosterOf(L).filter(function(m) { return !m.fixed; }); }
+function sexJP(s) { return s === 'F' ? '女' : '男'; }
+
+/* ===== 装備品 =====
+   team : null=全チーム共通 / 'A'|'B'|'C'=そのチーム専用
+   only : その個人しか装備できない専用武器
+   kind : passive=常時 / active=任意発動 / reactive=条件発動 / flavor=盤面効果なし
+   once : 1ゲーム1回のみ */
+const WEAPONS = [
+    { id: 'funnel',    name: 'ファンネル石井',             team: 'A', only: '石井',   kind: 'active',   once: true,
+      desc: '自らを生贄に捧げ、見えている敵の駒1人を撃破する。' },
+    { id: 'zutai',     name: '図体のでかい関原',           team: 'B', only: '関原',   kind: 'passive',
+      desc: '関原が場にいる限り味方全員の行動マス+1。関原が倒されると、以後ゲーム終了まで味方全員-2。' },
+    { id: 'hardgel',   name: '小野寺のハードジェル',       team: 'C', only: '小野寺', kind: 'active',   once: true,
+      desc: '見えている敵のオールバックでない駒（＝女）1人を、1ターン行動不能にする。' },
+    { id: 'fuhou',     name: '村上の不法滞在',             team: null,                kind: 'active',   once: true,
+      desc: '潜伏所にいる敵を全員、隣の通路へ強制的に追い出す。' },
+    { id: 'maeba',     name: '平井の人造前歯',             team: null,                kind: 'active',   once: true, declare: true,
+      desc: '前のターンに宣言が必要。次の自分のターン、敵陣方向へ縦に何マスでも直進できる。' },
+    { id: 'kusaidama', name: '門間の臭い玉',               team: null,                kind: 'passive',
+      desc: '敵のメガホン以外の駒は、この駒の周囲1マスに入れない。' },
+    { id: 'moonwalk',  name: 'ヒロフミのムーンウォーク',   team: 'A',                 kind: 'passive',
+      desc: 'この駒の行動マスが常に+2される。' },
+    { id: 'phoenix',   name: '桃子のフェニックス',         team: 'B',                 kind: 'reactive', once: true,
+      desc: '味方が撃破されたその瞬間に限り、その味方を自陣の本殿で復活させられる。' },
+    { id: 'jikkyou',   name: '形上の名実況',               team: 'C',                 kind: 'flavor',
+      desc: '常にチーム全員でグループ通話が可能（盤面上の効果はありません）。' },
+    { id: 'onnabancho',name: 'ユウカの女番長',             team: 'A',                 kind: 'passive',
+      desc: '味方の【女】の行動マス+1、敵の【女】の行動マス-1。' },
+    { id: 'sennichi',  name: '江口の千日計画',             team: 'B',                 kind: 'passive',
+      desc: '第9ラウンドまでこの駒の行動マスは1。第10ラウンドから10になる。' },
+    { id: 'daichari',  name: '中村のダイチャリ',           team: 'C',                 kind: 'active',   once: true,
+      desc: '見えている敵1人を、その敵の進行方向へ強制的に5マス前進させる。潜伏中の敵には効かない。' },
+    { id: 'virgin',    name: '前田のヴァージンロード',     team: 'A',                 kind: 'passive',
+      desc: '同じ通りの同じ列で、この駒の正面（敵陣側）にいる敵の【男】の行動マス-2。' },
+    { id: 'gakureki',  name: '西尾の学歴コンプ',           team: 'B',                 kind: 'active',   once: true,
+      desc: '発動した次の相手ターン、石井・内藤・小野寺・川名以外は行動できなくなる。' },
+    { id: 'comic',     name: '金澤&ノノカのコミックパワー',team: 'C',                 kind: 'active',   once: true,
+      desc: 'この駒と同じ通りにいる全員を敵味方問わず撃破。潜伏中も対象。旗持ち・メガホンは対象外。' },
+    { id: 'charisma',  name: '山下の自称カリスマ',         team: 'A',                 kind: 'passive',
+      desc: '味方全員の行動マス+1、敵全員の行動マス-1。' },
+    { id: 'chinbo',    name: '吉岡の珍棒',                 team: 'B',                 kind: 'passive',
+      desc: '移動時、通過した各マスの周囲1マスにも攻撃が及ぶ。' },
+    { id: 'kusanagi',  name: '草薙剣',                     team: 'C',                 kind: 'passive',
+      desc: '通過したマスに隣接する潜伏所の中身を、マスを消費せず開示する。' }
+];
+const WP = {};
+WEAPONS.forEach(function(w) { WP[w.id] = w; });
+function wpName(id) { return (WP[id] && WP[id].name) || ''; }
+/* 【西尾の学歴コンプ】の適用除外者 */
+const GAKUREKI_FREE = ['石井', '内藤', '小野寺', '川名'];
+
+/* チーム L の人物 m が装備できる武器一覧 */
+function weaponsFor(L, m) {
+    if (!m) return [];
+    return WEAPONS.filter(function(w) {
+        if (w.only) return w.only === m.name;
+        return (w.team === null || w.team === L);
+    });
+}
+
+/* ===== 通り（フロア）判定 ===== */
+/* A+B = 1階の通り、C+D = 2階の通り。階段・本殿はどの通りにも属さない */
+function floorOfPos(id) {
+    var q = SQ[id];
+    if (!q) return 0;
+    if (q.kind === 'stair' || q.kind === 'honden') return 0;
+    return q.floor || 0;
+}
+/* 廊下の直線インデックス（青→赤 の向きに 0..29）と列（0=奇数側 / 1=偶数側） */
+const CORR_NEXT = { A: 'B', C: 'D' };
+function corrIndex(id) {
+    var q = SQ[id];
+    if (!q || q.kind !== 'corridor') return null;
+    var n = parseInt(id.slice(1), 10);
+    var row = Math.floor((n - 1) / 2);
+    var col = (n % 2 === 1) ? 0 : 1;
+    var head = (q.corridor === 'A' || q.corridor === 'C');
+    return { idx: head ? row : 15 + row, col: col, floor: q.floor };
+}
+/* 青は index 増加方向、赤は減少方向が「前進」 */
+function forwardSign(team) { return team === 'blue' ? 1 : -1; }
+function corrIdToPos(floor, idx, col) {
+    var first = (floor === 1) ? 'A' : 'C';
+    var second = (floor === 1) ? 'B' : 'D';
+    if (idx < 0 || idx > 29) return null;
+    var name = (idx < 15) ? first : second;
+    var row = (idx < 15) ? idx : idx - 15;
+    return name + (row * 2 + 1 + col);
+}
+
 /* ===== エンジン：純ルール ＋ オンライン同期 ===== */
 const OTHER = {
     blue: 'red',
@@ -513,8 +697,17 @@ const JPN = {
 };
 
 const RULES = (function() {
+    function roleGlyph(role) {
+        return role === 'flag' ? '🚩' : role === 'mega' ? '📣' : '';
+    }
+    /* 盤面ログ等での表記： 青石井📣 のように色＋個人名＋役職記号 */
     function plbl(s) {
-        return (s.team === 'blue' ? '青' : '赤') + (s.role === 'flag' ? '🚩旗持ち' : s.role === 'mega' ? '📣メガホン' : '兵' + s.num);
+        var nm = s.name || ('兵' + s.num);
+        return (s.team === 'blue' ? '青' : '赤') + nm + roleGlyph(s.role);
+    }
+    /* 編成スロットの表示文字列：【名前】-【📣/🚩/空欄】-【79/80】-【男/女】-【装備品】 */
+    function slotLabel(m, role, wpId) {
+        return [m.name, roleGlyph(role), String(m.year), sexJP(m.sex), wpId ? wpName(wpId) : '装備なし'].join('-');
     }
 
     function soldierAt(g, id) {
@@ -547,150 +740,358 @@ const RULES = (function() {
         if (g.log.length > 140) g.log = g.log.slice(-140);
     }
 
-    /* 配置リスト [{role,pos}] の妥当性検査。問題なければ null、あればエラーメッセージ */
-    function validatePlacement(list, team) {
+    /* 配置リスト [{role,pos,name,wp}] の妥当性検査。問題なければ null、あればエラーメッセージ */
+    function validatePlacement(list, team, L) {
         if (!Array.isArray(list) || list.length !== 8) return '8人ちょうど配置してください';
-        const roles = {
-            soldier: 0,
-            mega: 0,
-            flag: 0
-        };
-        const seen = {};
+        if (!L || !ROSTER[L]) return 'チーム（A/B/C）が選ばれていません';
+        const roles = { soldier: 0, mega: 0, flag: 0 };
+        const seenPos = {}, seenName = {}, seenWp = {};
         for (const p of list) {
             if (!SQ[p.pos]) return '不正なマス: ' + p.pos;
             if (SQ[p.pos].team !== team) return p.pos + ' は' + JPN[team] + 'の陣地ではありません';
-            if (seen[p.pos]) return p.pos + ' に2人置かれています';
-            seen[p.pos] = true;
+            if (seenPos[p.pos]) return p.pos + ' に2人置かれています';
+            seenPos[p.pos] = true;
             if (!(p.role in roles)) return '不正な役職';
             roles[p.role]++;
+            const m = memberOf(L, p.name);
+            if (!m) return (p.name || '(無名)') + ' はチーム' + L + 'の名簿にいません';
+            if (seenName[p.name]) return p.name + ' が2人います';
+            seenName[p.name] = true;
+            if (p.role === 'mega' && m.fixed !== 'mega') return '📣メガホンは' + fixedOf(L, 'mega').name + '固定です';
+            if (p.role === 'flag' && m.fixed !== 'flag') return '🚩旗持ちは' + fixedOf(L, 'flag').name + '固定です';
+            if (p.role === 'soldier' && m.fixed) return m.name + ' は' + (m.fixed === 'mega' ? '📣メガホン' : '🚩旗持ち') + '専任です';
+            if (p.wp) {
+                if (!WP[p.wp]) return '不正な装備品';
+                if (seenWp[p.wp]) return wpName(p.wp) + ' を2人が装備しています（武器は1個ずつ）';
+                seenWp[p.wp] = true;
+                if (!weaponsFor(L, m).some(function(w) { return w.id === p.wp; }))
+                    return m.name + ' は ' + wpName(p.wp) + ' を装備できません';
+            }
         }
-        if (roles.soldier !== 6 || roles.mega !== 1 || roles.flag !== 1) return '内訳は 兵士6・📣1・🚩1 にしてください';
+        if (roles.soldier !== 6 || roles.mega !== 1 || roles.flag !== 1) return '内訳は プレイヤー6・📣1・🚩1 にしてください';
         return null;
     }
 
-    function newGame(placeBlue, placeRed, firstTeam) {
+    function newGame(placeBlue, placeRed, firstTeam, letters) {
+        letters = letters || { blue: 'A', red: 'B' };
         const soldiers = [];
-        let n = 0;
-        placeBlue.forEach(p => {
-            n++;
-            soldiers.push({
-                sid: 'b' + n,
-                team: 'blue',
-                role: p.role,
-                num: n,
-                pos: p.pos,
-                alive: true,
-                steps: 0,
-                locked: false
+        function build(list, team, pre) {
+            let n = 0;
+            list.forEach(function(p) {
+                n++;
+                const m = memberOf(letters[team], p.name) || { name: p.name || ('兵' + n), year: 79, sex: 'M' };
+                soldiers.push({
+                    sid: pre + n, team: team, role: p.role, num: n, pos: p.pos,
+                    alive: true, steps: 0, locked: false,
+                    name: m.name, year: m.year, sex: m.sex, wp: p.wp || null,
+                    stun: false, maebaDeclared: false, maebaReady: false
+                });
             });
-        });
-        n = 0;
-        placeRed.forEach(p => {
-            n++;
-            soldiers.push({
-                sid: 'r' + n,
-                team: 'red',
-                role: p.role,
-                num: n,
-                pos: p.pos,
-                alive: true,
-                steps: 0,
-                locked: false
-            });
-        });
+        }
+        build(placeBlue, 'blue', 'b');
+        build(placeRed, 'red', 'r');
         const g = {
-            v: 0,
-            phase: 'play',
-            firstTeam: firstTeam,
-            activeTeam: firstTeam,
-            turn: 1,
-            crossed: {
-                1: false,
-                2: false
-            },
-            soldiers: soldiers,
-            winner: null,
-            winLines: [],
-            log: ['▶ ゲーム開始　先攻: ' + JPN[firstTeam]],
+            v: 0, phase: 'play', firstTeam: firstTeam, activeTeam: firstTeam, turn: 1,
+            crossed: { 1: false, 2: false },
+            letters: letters,
+            used: { blue: {}, red: {} },
+            zutaiDown: { blue: false, red: false },
+            revealT: { blue: [], red: [] },
+            gakureki: null,
+            soldiers: soldiers, winner: null, winLines: [],
+            log: ['▶ ゲーム開始　先攻: ' + JPN[firstTeam] +
+                  '　／　' + JPN['blue'] + '＝チーム' + letters.blue + '　' + JPN['red'] + '＝チーム' + letters.red],
             turnStartedAt: Date.now()
         };
         beginTurn(g);
         return g;
     }
 
-    function beginTurn(g) {
-        g.soldiers.forEach(s => {
-            if (s.team === g.activeTeam && s.alive) {
-                s.steps = (s.role === 'mega') ? 6 : 4;
-                s.locked = false;
-            }
+    /* ===== 行動マス数の算出 =====
+       ・常時効果は「装備者が生存している間だけ」有効
+       ・例外: 【図体のでかい関原】は撃破後、自軍に -2 の永続ペナルティ */
+    function baseSteps(g, s) {
+        if (s.wp === 'sennichi') return (Math.ceil(g.turn / 2) <= 9) ? 1 : 10;
+        return (s.role === 'mega') ? 6 : 4;
+    }
+    /* 【前田のヴァージンロード】: 同じ通り・同じ列で、装備者の正面（敵陣側）にいるか */
+    function virginHit(g, s) {
+        if (s.sex !== 'M') return false;
+        const a = corrIndex(s.pos);
+        if (!a) return false;
+        return g.soldiers.some(function(o) {
+            if (!o.alive || o.team === s.team || o.wp !== 'virgin') return false;
+            const b = corrIndex(o.pos);
+            if (!b || b.floor !== a.floor || b.col !== a.col) return false;
+            return (a.idx - b.idx) * forwardSign(o.team) > 0;
         });
+    }
+    function stepsFor(g, s) {
+        let v = baseSteps(g, s);
+        if (s.wp === 'moonwalk') v += 2;
+        g.soldiers.forEach(function(o) {
+            if (!o.alive) return;
+            const ally = (o.team === s.team);
+            if (o.wp === 'charisma') v += ally ? 1 : -1;
+            if (o.wp === 'onnabancho' && s.sex === 'F') v += ally ? 1 : -1;
+            if (o.wp === 'zutai' && ally) v += 1;
+        });
+        if (g.zutaiDown && g.zutaiDown[s.team]) v -= 2;
+        if (virginHit(g, s)) v -= 2;
+        return Math.max(0, v);
+    }
+
+    function beginTurn(g) {
+        const team = g.activeTeam;
+        const locked = !!(g.gakureki && g.gakureki.target === team && g.gakureki.turn === g.turn);
+        g.soldiers.forEach(function(s) {
+            if (s.team !== team || !s.alive) return;
+            s.steps = stepsFor(g, s);
+            s.locked = false;
+            s.maebaReady = !!s.maebaDeclared;
+            s.maebaDeclared = false;
+            if (s.stun) { s.stun = false; s.steps = 0; }
+            if (locked && GAKUREKI_FREE.indexOf(s.name) < 0) s.steps = 0;
+        });
+        if (locked) g.log.push('📕 西尾の学歴コンプ発動中！ ' + JPN[team] + 'は ' + GAKUREKI_FREE.join('・') + ' 以外行動できない');
         g.log.push('― 第' + Math.ceil(g.turn / 2) + 'ラウンド ' + JPN[g.activeTeam] + 'のターン ―');
         g.turnStartedAt = Date.now();
         trimLog(g);
     }
+    /* ===== 撃破処理 =====
+       ・【図体のでかい関原】の死亡ペナルティ
+       ・【桃子のフェニックス】による復活（1ゲーム1回）
+       戻り値 true=撃破成立 / false=復活したので撃破は成立せず */
+    function killPiece(g, foe, msg, noRevive) {
+        foe.alive = false;
+        g.log.push(msg);
+        if (foe.wp === 'zutai' && !g.zutaiDown[foe.team]) {
+            g.zutaiDown[foe.team] = true;
+            g.log.push('💥 ' + foe.name + ' 戦死。以後ゲーム終了まで' + JPN[foe.team] + '全員の行動マス -2');
+        }
+        if (!noRevive) {
+            const ph = g.soldiers.filter(function(o) { return o.alive && o.team === foe.team && o.wp === 'phoenix'; })[0];
+            if (ph && !g.used[foe.team].phoenix) {
+                const home = (foe.team === 'blue') ? ['P5', 'P6'] : ['Q5', 'Q6'];
+                const free = home.filter(function(id) { return !soldierAt(g, id); });
+                if (free.length) {
+                    g.used[foe.team].phoenix = true;
+                    foe.alive = true; foe.pos = free[0]; foe.steps = 0; foe.locked = true;
+                    g.log.push('🔥 桃子のフェニックス発動！ ' + plbl(foe) + ' が本殿 ' + free[0] + ' で復活');
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+    /* 【門間の臭い玉】: 装備者の周囲1マスへは、敵のメガホン以外は進入できない */
+    function kusaiBlocked(g, s, to) {
+        if (s.role === 'mega') return false;
+        return g.soldiers.some(function(o) {
+            return o.alive && o.team !== s.team && o.wp === 'kusaidama' && ADJ[to] && ADJ[to].indexOf(o.pos) >= 0;
+        });
+    }
+    /* 【吉岡の珍棒】: 移動先の周囲1マスにも攻撃が及ぶ（囲われた潜伏所・大部屋は対象外） */
+    function splashAttack(g, s, kills) {
+        if (s.wp !== 'chinbo' || !s.alive) return;
+        ADJ[s.pos].forEach(function(nb) {
+            const k = SQ[nb].kind;
+            if (k === 'T' || k === 'room') return;
+            const foe = enemyAt(g, nb, s.team);
+            if (foe && killPiece(g, foe, '⚔ 吉岡の珍棒の間合い！ ' + plbl(foe) + ' が ' + nb + ' で撃破された')) kills.push(foe);
+        });
+    }
+    /* 【草薙剣】: 通過したマスに隣接する潜伏所の扉を破壊し、中身を開示する */
+    function kusanagiReveal(g, s) {
+        if (s.wp !== 'kusanagi' || !s.alive) return;
+        ADJ[s.pos].forEach(function(nb) {
+            if (SQ[nb].kind !== 'T' || g.revealT[s.team].indexOf(nb) >= 0) return;
+            g.revealT[s.team].push(nb);
+            const occ = soldierAt(g, nb);
+            g.log.push('🗡 草薙剣が ' + nb + ' の扉を破壊 → ' + (occ ? plbl(occ) + ' が潜伏していた' : '無人'));
+        });
+    }
+    function checkWins(g, s, to, kills) {
+        if (g.phase !== 'play') return;
+        if (kills.some(function(k) { return k.role === 'flag'; })) { gwin(g, s.team, '敵の🚩旗持ちを撃破'); return; }
+        const q = to ? SQ[to] : null;
+        if (q && q.kind === 'honden' && q.team !== s.team) { gwin(g, s.team, plbl(s) + ' が敵の本殿 ' + to + ' に到達'); return; }
+        if (kills.length && aliveCount(g, OTHER[s.team]) === 0) gwin(g, s.team, '敵チームを全滅させた');
+    }
+
     /* 1歩進める。戻り値 {ok:true} か {ok:false,err} */
     function stepMove(g, sid, to) {
-        if (g.phase !== 'play') return {
-            ok: false,
-            err: 'ゲームは進行中ではありません'
-        };
+        if (g.phase !== 'play') return { ok: false, err: 'ゲームは進行中ではありません' };
         const s = getS(g, sid);
-        if (!s || !s.alive) return {
-            ok: false,
-            err: 'その兵士は動かせません'
-        };
-        if (s.team !== g.activeTeam) return {
-            ok: false,
-            err: '相手のターンです'
-        };
-        if (s.locked) return {
-            ok: false,
-            err: '潜伏所に入ったターンは動けません'
-        };
-        if (s.steps <= 0) return {
-            ok: false,
-            err: 'この兵士の移動力は使い切りました'
-        };
-        if (ADJ[s.pos].indexOf(to) < 0) return {
-            ok: false,
-            err: '隣のマスにしか進めません'
-        };
-        if (allyAt(g, to, s.team)) return {
-            ok: false,
-            err: '味方がいるマスへは進めません'
-        };
-        /* ▼ ルール改定: 部屋・潜伏所からの退出 */
+        if (!s || !s.alive) return { ok: false, err: 'その駒は動かせません' };
+        if (s.team !== g.activeTeam) return { ok: false, err: '相手のターンです' };
+        if (s.locked) return { ok: false, err: '潜伏所に入ったターンは動けません' };
+        if (s.steps <= 0) return { ok: false, err: 'この駒の移動力は使い切りました' };
+        if (ADJ[s.pos].indexOf(to) < 0) return { ok: false, err: '隣のマスにしか進めません' };
+        if (allyAt(g, to, s.team)) return { ok: false, err: '味方がいるマスへは進めません' };
+        if (kusaiBlocked(g, s, to)) return { ok: false, err: '門間の臭い玉が臭くて近づけません' };
         const qFrom = SQ[s.pos];
         const qTo0 = SQ[to];
         const leavingRoom = (qFrom.kind === 'T' && qTo0.kind !== 'T') || (!!qFrom.room && qFrom.room !== qTo0.room);
-        if (leavingRoom && s.steps < 2) return {
-            ok: false,
-            err: '部屋・潜伏所から出るには2歩ぶんの移動力が必要です'
-        };
+        if (leavingRoom && s.steps < 2) return { ok: false, err: '部屋・潜伏所から出るには2歩ぶんの移動力が必要です' };
+        const kills = [];
         const foe = enemyAt(g, to, s.team);
-        if (foe) {
-            foe.alive = false;
-            g.log.push('⚔ ' + plbl(foe) + ' が ' + to + ' で撃破された');
-        }
+        if (foe && killPiece(g, foe, '⚔ ' + plbl(foe) + ' が ' + to + ' で撃破された')) kills.push(foe);
         s.pos = to;
         s.steps--;
-        if (leavingRoom) s.steps--; /* 退出は2歩ぶん消費 */
+        if (leavingRoom) s.steps--;
         const q = SQ[to];
         if (q.kind === 'T') s.locked = true;
-        /* ▼ 暗幕: 壁リンク（A29/A30⇄B1/B2・C29/C30⇄D1/D2）を通過すると、その階の暗幕が破れる */
         if (qFrom.kind === 'corridor' && q.kind === 'corridor' && qFrom.corridor !== q.corridor && !g.crossed[q.floor]) {
             g.crossed[q.floor] = true;
             g.log.push('🔶 ' + q.floor + '階の暗幕が破られた！ 以後この階では、廊下に立てば反対側の廊下まで見通せます');
         }
-        if (foe && foe.role === 'flag') gwin(g, s.team, '敵の🚩旗持ちを撃破');
-        else if (q.kind === 'honden' && q.team !== s.team) gwin(g, s.team, plbl(s) + ' が敵の本殿 ' + to + ' に到達');
-        else if (foe && aliveCount(g, OTHER[s.team]) === 0) gwin(g, s.team, '敵チームを全滅させた');
+        splashAttack(g, s, kills);
+        kusanagiReveal(g, s);
+        checkWins(g, s, to, kills);
         trimLog(g);
-        return {
-            ok: true,
-            captured: foe ? foe.sid : null
-        };
+        return { ok: true, captured: kills.length ? kills[0].sid : null };
+    }
+
+    /* ===== 強制移動（【中村のダイチャリ】用）: その駒の進行方向へ n マス ===== */
+    function forcePush(g, v, n) {
+        const sign = forwardSign(v.team);
+        let moved = 0;
+        for (let i = 0; i < n; i++) {
+            const c = corrIndex(v.pos);
+            if (!c) break;
+            const nxt = corrIdToPos(c.floor, c.idx + sign, c.col);
+            if (!nxt || soldierAt(g, nxt)) break;
+            v.pos = nxt; moved++;
+        }
+        return moved;
+    }
+
+    /* ===== 任意発動の装備品 =====
+       targetSid が要るもの: hardgel（見えている敵の女）/ daichari（見えている敵） */
+    function useWeapon(g, sid, targetSid) {
+        if (g.phase !== 'play') return { ok: false, err: 'ゲームは進行中ではありません' };
+        const s = getS(g, sid);
+        if (!s || !s.alive) return { ok: false, err: 'その駒は行動できません' };
+        if (s.team !== g.activeTeam) return { ok: false, err: '相手のターンです' };
+        const w = WP[s.wp];
+        if (!w) return { ok: false, err: '装備品がありません' };
+        if (w.kind !== 'active') return { ok: false, err: wpName(s.wp) + ' は任意発動できません' };
+        if (w.once && g.used[s.team][w.id]) return { ok: false, err: wpName(s.wp) + ' は使用済みです' };
+        const foe = OTHER[s.team];
+        const kills = [];
+
+        if (w.id === 'funnel') {
+            const cand = g.soldiers.filter(function(o) { return o.alive && o.team === foe; });
+            if (!cand.length) return { ok: false, err: '対象がいません' };
+            const v = cand[Math.floor(Math.random() * cand.length)];
+            g.used[s.team].funnel = true;
+            g.log.push('✨ ファンネル石井発動！ ' + plbl(s) + ' が自らを生贄に捧げた');
+            killPiece(g, s, '☠ ' + plbl(s) + ' は消滅した', true);
+            if (killPiece(g, v, '🎯 無作為に選ばれた ' + plbl(v) + ' が撃破された')) kills.push(v);
+            checkWins(g, s, null, kills);
+            trimLog(g); return { ok: true };
+        }
+        if (w.id === 'hardgel') {
+            const v = getS(g, targetSid);
+            if (!v || !v.alive || v.team !== foe) return { ok: false, err: '対象の敵を選んでください' };
+            if (v.sex !== 'F') return { ok: false, err: v.name + ' はオールバック（男）なので効きません' };
+            if (!visibleSquares(g, s.team).has(v.pos)) return { ok: false, err: '見えている敵しか対象にできません' };
+            g.used[s.team].hardgel = true;
+            v.stun = true; v.steps = 0;
+            g.log.push('💈 小野寺のハードジェル！ ' + plbl(v) + ' は次のターン行動不能');
+            trimLog(g); return { ok: true };
+        }
+        if (w.id === 'daichari') {
+            const v = getS(g, targetSid);
+            if (!v || !v.alive || v.team !== foe) return { ok: false, err: '対象の敵を選んでください' };
+            if (SQ[v.pos].kind === 'T') return { ok: false, err: '潜伏中の敵には効きません' };
+            if (!corrIndex(v.pos)) return { ok: false, err: '廊下にいる敵にしか効きません' };
+            if (!visibleSquares(g, s.team).has(v.pos)) return { ok: false, err: '見えている敵しか対象にできません' };
+            g.used[s.team].daichari = true;
+            const mv = forcePush(g, v, 5);
+            g.log.push('🚲 中村のダイチャリ！ ' + plbl(v) + ' を ' + mv + 'マス強制前進させ ' + v.pos + ' へ');
+            checkWins(g, v, v.pos, []);
+            trimLog(g); return { ok: true };
+        }
+        if (w.id === 'fuhou') {
+            const hid = g.soldiers.filter(function(o) { return o.alive && o.team === foe && SQ[o.pos].kind === 'T'; });
+            if (!hid.length) return { ok: false, err: '潜伏している敵がいません' };
+            g.used[s.team].fuhou = true;
+            g.log.push('🛂 村上の不法滞在！ 潜伏中の' + JPN[foe] + 'を摘発');
+            hid.forEach(function(o) {
+                const door = SQ[o.pos].door;
+                if (door && !soldierAt(g, door)) {
+                    const from = o.pos; o.pos = door; o.locked = false;
+                    g.log.push('　→ ' + plbl(o) + ' が ' + from + ' から ' + door + ' へ叩き出された');
+                } else {
+                    g.log.push('　→ ' + plbl(o) + ' は出口が塞がれており居座った');
+                }
+            });
+            trimLog(g); return { ok: true };
+        }
+        if (w.id === 'gakureki') {
+            g.used[s.team].gakureki = true;
+            g.gakureki = { target: foe, turn: g.turn + 1 };
+            g.log.push('📕 西尾の学歴コンプ発動！ 次の' + JPN[foe] + 'のターンは ' + GAKUREKI_FREE.join('・') + ' 以外行動できない');
+            trimLog(g); return { ok: true };
+        }
+        if (w.id === 'comic') {
+            const fl = floorOfPos(s.pos);
+            if (!fl) return { ok: false, err: '通り（廊下・潜伏所・大部屋）にいる時だけ使えます' };
+            g.used[s.team].comic = true;
+            g.log.push('💣 金澤&ノノカのコミックパワー！ ' + fl + '階の通りが吹き飛んだ');
+            const victims = g.soldiers.filter(function(o) { return o.alive && o.role === 'soldier' && floorOfPos(o.pos) === fl; });
+            victims.forEach(function(o) {
+                if (killPiece(g, o, '　→ ' + plbl(o) + ' が ' + o.pos + ' で巻き込まれ撃破された', true) && o.team === foe) kills.push(o);
+            });
+            checkWins(g, s, null, kills);
+            trimLog(g); return { ok: true };
+        }
+        if (w.id === 'maeba') {
+            if (s.maebaReady) return { ok: false, err: 'すでに宣言済みです。「突進」で使ってください' };
+            g.used[s.team].maeba = true;
+            s.maebaDeclared = true;
+            g.log.push('🦷 平井の人造前歯を宣言！ ' + plbl(s) + ' は次の自分のターンに突進できる');
+            trimLog(g); return { ok: true };
+        }
+        return { ok: false, err: '未対応の装備品です' };
+    }
+
+    /* 【平井の人造前歯】宣言済みの駒が、敵陣方向へ縦に突進する */
+    function maebaMove(g, sid) {
+        if (g.phase !== 'play') return { ok: false, err: 'ゲームは進行中ではありません' };
+        const s = getS(g, sid);
+        if (!s || !s.alive) return { ok: false, err: 'その駒は動かせません' };
+        if (s.team !== g.activeTeam) return { ok: false, err: '相手のターンです' };
+        if (!s.maebaReady) return { ok: false, err: '前のターンに宣言が必要です' };
+        if (!corrIndex(s.pos)) return { ok: false, err: '廊下にいる時だけ突進できます' };
+        const sign = forwardSign(s.team);
+        const kills = [];
+        let moved = 0;
+        for (;;) {
+            const c = corrIndex(s.pos);
+            if (!c) break;
+            const nxt = corrIdToPos(c.floor, c.idx + sign, c.col);
+            if (!nxt) break;
+            if (allyAt(g, nxt, s.team)) break;
+            if (kusaiBlocked(g, s, nxt)) break;
+            const v = enemyAt(g, nxt, s.team);
+            if (SQ[s.pos].corridor !== SQ[nxt].corridor && !g.crossed[SQ[nxt].floor]) {
+                g.crossed[SQ[nxt].floor] = true;
+                g.log.push('🔶 ' + SQ[nxt].floor + '階の暗幕が破られた！ 以後この階では、廊下に立てば反対側の廊下まで見通せます');
+            }
+            s.pos = nxt; moved++;
+            if (v && killPiece(g, v, '⚔ 人造前歯の突進！ ' + plbl(v) + ' が ' + nxt + ' で撃破された')) kills.push(v);
+        }
+        s.maebaReady = false;
+        s.steps = 0;
+        g.log.push('🦷 ' + plbl(s) + ' が ' + moved + 'マス突進して ' + s.pos + ' へ');
+        splashAttack(g, s, kills);
+        kusanagiReveal(g, s);
+        checkWins(g, s, s.pos, kills);
+        trimLog(g);
+        return { ok: true };
     }
 
     function endTurn(g) {
@@ -793,10 +1194,17 @@ const RULES = (function() {
             }
         });
         mine.forEach(s => vis.add(s.pos));
+        /* 【草薙剣】で扉を破壊した潜伏所は以後ずっと見える */
+        ((g.revealT && g.revealT[team]) || []).forEach(function(id) { vis.add(id); });
         return vis;
     }
     return {
         plbl,
+        roleGlyph,
+        slotLabel,
+        stepsFor,
+        useWeapon,
+        maebaMove,
         soldierAt,
         allyAt,
         enemyAt,
@@ -1113,7 +1521,7 @@ Net.prototype._probe = function(client, code, waitMs) {
 };
 
 /* 部屋を作る：接続できたブローカーで、未使用コードを探して retained meta を発行 */
-Net.prototype.createRoom = async function(team, firstTeam, onProgress) {
+Net.prototype.createRoom = async function(team, firstTeam, onProgress, letter) {
     this.setStatus('connecting');
     var c = null,
         broker = null;
@@ -1170,11 +1578,14 @@ Net.prototype.createRoom = async function(team, firstTeam, onProgress) {
     this.setStatus('online');
     this._subscribeRoom();
     this._beat();
+    var letters = {};
+    letters[team] = letter || 'A';
     var meta = {
-        v: 1,
+        v: 2,
         code: code,
         host: team,
         firstTeam: firstTeam,
+        letters: letters,
         status: 'waiting',
         round: 1,
         created: Date.now()
@@ -1404,10 +1815,15 @@ if (typeof module !== 'undefined' && module.exports) {
             }
         },
         placeTeam: 'blue',
-        placeRole: 'soldier',
+        placeSlot: 0,
+        squadTeam: 'blue',
+        letter: { blue: null, red: null },
+        squad: { blue: null, red: null },
+        target: null,
         localFirst: null,
         createOpt: {
             team: 'random',
+            letter: 'A',
             first: 'coin'
         },
         cpuTeam: null,
@@ -1415,6 +1831,7 @@ if (typeof module !== 'undefined' && module.exports) {
         cpuMem: null,
         cpuOpt: {
             team: 'blue',
+            letter: 'A',
             first: 'cpu',
             level: 'strong'
         }
@@ -1429,7 +1846,7 @@ if (typeof module !== 'undefined' && module.exports) {
     }
 
     /* ---------- 画面 ---------- */
-    var SCREENS = ['scrHome', 'scrCreate', 'scrJoin', 'scrWait', 'scrGame', 'scrCpu'];
+    var SCREENS = ['scrHome', 'scrCreate', 'scrJoin', 'scrWait', 'scrGame', 'scrCpu', 'scrSquad'];
 
     function showScreen(name) {
         APP.screen = name;
@@ -1453,43 +1870,260 @@ if (typeof module !== 'undefined' && module.exports) {
         }, 3000);
     }
 
-    /* ---------- 配置エディタ ---------- */
-    function pools(ed) {
-        var c = {
-            soldier: 6,
-            mega: 1,
-            flag: 1
-        };
-        ed.list.forEach(function(p) {
-            c[p.role]--;
+    /* ---------- 編成（チームA/B/C・8スロット・装備品） ---------- */
+    /* APP.squad[team] = [{role,name,wp}] × 8  … 0〜5=プレイヤー1〜6 / 6=📣 / 7=🚩 */
+    function defaultSquad(L) {
+        var free = freeRoster(L),
+            out = [];
+        for (var i = 0; i < 6; i++) out.push({ role: 'soldier', name: free[i].name, wp: null });
+        out.push({ role: 'mega', name: fixedOf(L, 'mega').name, wp: null });
+        out.push({ role: 'flag', name: fixedOf(L, 'flag').name, wp: null });
+        return out;
+    }
+    /* 相手が確保済みのチーム文字（同じチームは選べない） */
+    function takenLetter(team) {
+        var foe = OTHER[team];
+        if (APP.mode === 'online') {
+            var m = APP.meta || {};
+            return (m.letters && m.letters[foe]) || null;
+        }
+        return APP.letter[foe] || null;
+    }
+    function setLetter(team, L) {
+        if (takenLetter(team) === L) { hint('チーム' + L + 'は相手が使用中です'); return; }
+        APP.letter[team] = L;
+        APP.squad[team] = defaultSquad(L);
+        APP.edit[team].list = [];
+        renderSquad();
+    }
+    function squadEditTeam() {
+        return (APP.mode === 'online' || APP.mode === 'cpu') ? APP.myTeam : APP.squadTeam;
+    }
+    /* いま他スロットで使用中の名前／武器 */
+    function usedIn(sq, field, exceptIdx) {
+        var o = {};
+        sq.forEach(function(s, i) { if (i !== exceptIdx && s[field]) o[s[field]] = true; });
+        return o;
+    }
+    function renderSquad() {
+        var team = squadEditTeam(),
+            L = APP.letter[team];
+        var taken = takenLetter(team);
+        /* チーム文字の選択ボタン */
+        $('squadTeamPick').innerHTML = SQUADS.map(function(x) {
+            var dis = (taken === x) ? ' disabled' : '';
+            var on = (L === x) ? ' class="on"' : '';
+            return '<button data-act="squad-letter-' + x + '"' + on + dis + '>チーム' + x +
+                (taken === x ? '（相手が使用中）' : '') + '</button>';
+        }).join('');
+        var lead = (APP.mode === 'local') ?
+            JPN[team] + '陣の編成です。8人と装備品を決めてください。' :
+            '出陣させる8人と、それぞれの装備品を決めます。装備品は1個ずつしかなく、同じものを2人は持てません。';
+        $('squadLead').textContent = lead;
+        if (!L) {
+            $('squadSlots').innerHTML = '<p class="mut">まずチームを選んでください。</p>';
+            $('squadMsg').textContent = '';
+            return;
+        }
+        var sq = APP.squad[team];
+        var freeNames = freeRoster(L);
+        var h = '';
+        sq.forEach(function(sl, i) {
+            var m = memberOf(L, sl.name);
+            var isFixed = (sl.role !== 'soldier');
+            var usedN = usedIn(sq, 'name', i),
+                usedW = usedIn(sq, 'wp', i);
+            h += '<div class="slotCard' + (isFixed ? ' fixedRole' : '') + '">';
+            h += '<div class="slotHead"><span class="slotNo">' +
+                (isFixed ? (sl.role === 'mega' ? '📣 メガホン' : '🚩 旗持ち') : 'プレイヤー' + (i + 1)) + '</span>';
+            if (isFixed) h += '<span class="slotName">' + esc(sl.name) + '</span><span class="slotMeta">（固定）</span>';
+            h += '</div>';
+            if (!isFixed) {
+                h += '<div class="slotRow"><label>選手</label><select data-sq="name" data-idx="' + i + '">';
+                freeNames.forEach(function(mm) {
+                    var dis = usedN[mm.name] ? ' disabled' : '';
+                    h += '<option value="' + esc(mm.name) + '"' + (mm.name === sl.name ? ' selected' : '') + dis + '>' +
+                        esc(mm.name) + '（' + mm.year + '／' + sexJP(mm.sex) + '）</option>';
+                });
+                h += '</select></div>';
+            }
+            h += '<div class="slotRow"><label>装備品</label><select data-sq="wp" data-idx="' + i + '">';
+            h += '<option value=""' + (sl.wp ? '' : ' selected') + '>装備なし</option>';
+            weaponsFor(L, m).forEach(function(w) {
+                var dis = usedW[w.id] ? ' disabled' : '';
+                h += '<option value="' + w.id + '"' + (sl.wp === w.id ? ' selected' : '') + dis + '>' +
+                    esc(w.name) + (usedW[w.id] ? '（使用中）' : '') + '</option>';
+            });
+            h += '</select></div>';
+            var w = sl.wp ? WP[sl.wp] : null;
+            h += '<div class="wpNote' + (w ? '' : ' wpNone') + '">' + (w ? esc(w.desc) : '装備なし') + '</div>';
+            h += '<div class="sqPreview">' + esc(RULES.slotLabel(m, sl.role, sl.wp)) + '</div>';
+            h += '</div>';
         });
-        return c;
+        $('squadSlots').innerHTML = h;
+        var eq = sq.filter(function(s) { return s.wp; }).length;
+        $('squadMsg').textContent = 'チーム' + L + '／装備品 ' + eq + '/8 個を割り当て済み（装備なしでも開始できます）';
+        /* select の変更を拾う */
+        Array.prototype.forEach.call($('squadSlots').querySelectorAll('select'), function(el) {
+            el.addEventListener('change', function() {
+                var i = parseInt(el.getAttribute('data-idx'), 10);
+                var kind = el.getAttribute('data-sq');
+                if (kind === 'name') {
+                    APP.squad[team][i].name = el.value;
+                    /* 選手を替えたら、その人が装備できない武器は外す */
+                    var mm = memberOf(L, el.value);
+                    var cur = APP.squad[team][i].wp;
+                    if (cur && !weaponsFor(L, mm).some(function(w) { return w.id === cur; })) APP.squad[team][i].wp = null;
+                } else {
+                    APP.squad[team][i].wp = el.value || null;
+                }
+                renderSquad();
+            });
+        });
+    }
+    /* おまかせ編成：選手はそのまま、装備品をランダムに配る */
+    function squadAuto() {
+        var team = squadEditTeam(),
+            L = APP.letter[team];
+        if (!L) { hint('先にチームを選んでください'); return; }
+        APP.squad[team] = autoSquad(L);
+        renderSquad();
+    }
+    /* チーム L の編成を自動生成（AI・おまかせ用） */
+    function autoSquad(L) {
+        var sq = defaultSquad(L);
+        var pool = [];
+        WEAPONS.forEach(function(w) { pool.push(w.id); });
+        for (var i = pool.length - 1; i > 0; i--) {
+            var j = Math.floor(Math.random() * (i + 1)),
+                t = pool[i];
+            pool[i] = pool[j]; pool[j] = t;
+        }
+        var used = {};
+        sq.forEach(function(sl) {
+            var m = memberOf(L, sl.name);
+            var cand = weaponsFor(L, m).filter(function(w) { return !used[w.id]; });
+            if (cand.length) {
+                var pick = cand[Math.floor(Math.random() * cand.length)];
+                sl.wp = pick.id;
+                used[pick.id] = true;
+            }
+        });
+        return sq;
+    }
+    function squadValid(team) {
+        var L = APP.letter[team];
+        if (!L) return 'チーム（A/B/C）を選んでください';
+        var sq = APP.squad[team];
+        if (!sq || sq.length !== 8) return '編成が不正です';
+        var n = {}, w = {};
+        for (var i = 0; i < 8; i++) {
+            if (!sq[i].name) return 'プレイヤー' + (i + 1) + 'の選手が未選択です';
+            if (n[sq[i].name]) return sq[i].name + ' が重複しています';
+            n[sq[i].name] = 1;
+            if (sq[i].wp) {
+                if (w[sq[i].wp]) return wpName(sq[i].wp) + ' が重複しています';
+                w[sq[i].wp] = 1;
+            }
+        }
+        return null;
+    }
+    function squadDone() {
+        var team = squadEditTeam();
+        var err = squadValid(team);
+        if (err) { hint(err); return; }
+        if (APP.mode === 'online') {
+            var N = APP.net;
+            if (N && N.meta) {
+                var mm = JSON.parse(JSON.stringify(N.meta));
+                mm.letters = mm.letters || {};
+                if (mm.letters[OTHER[team]] === APP.letter[team]) {
+                    hint('チーム' + APP.letter[team] + 'は相手が使用中です。別のチームを選んでください');
+                    renderSquad();
+                    return;
+                }
+                mm.letters[team] = APP.letter[team];
+                mm.v = (mm.v || 1) + 1;
+                N.publishMeta(mm);
+                APP.meta = mm;
+                syncLetters(APP.meta);
+            }
+        }
+        APP.edit[team].list = [];
+        APP.placeSlot = 0;
+        if (APP.mode === 'local' && team === 'blue') {
+            /* ローカル対戦は 青 → 赤 の順に編成する */
+            APP.squadTeam = 'red';
+            if (!APP.letter.red) {
+                var rest = SQUADS.filter(function(x) { return x !== APP.letter.blue; });
+                APP.letter.red = rest[0];
+                APP.squad.red = defaultSquad(APP.letter.red);
+            }
+            renderSquad();
+            hint('続いて赤陣の編成です');
+            return;
+        }
+        showScreen('scrGame');
+        renderAll();
+    }
+    function squadBack() {
+        if (APP.mode === 'local' && APP.squadTeam === 'red') {
+            APP.squadTeam = 'blue';
+            renderSquad();
+            return;
+        }
+        showScreen('scrHome');
+    }
+    /* 編成画面へ入る */
+    function gotoSquad(team, preferLetter) {
+        var taken = takenLetter(team);
+        var L = preferLetter || APP.letter[team];
+        if (!L || L === taken) L = SQUADS.filter(function(x) { return x !== taken; })[0];
+        APP.letter[team] = L;
+        APP.squad[team] = APP.squad[team] && APP.squad[team].length === 8 && memberOf(L, APP.squad[team][0].name) ?
+            APP.squad[team] : defaultSquad(L);
+        showScreen('scrSquad');
+        renderSquad();
     }
 
+    /* ---------- 配置エディタ（8スロットの固有駒を並べる） ---------- */
     function placingTeam() {
         return (APP.mode === 'online' || APP.mode === 'cpu') ? APP.myTeam : APP.placeTeam;
     }
-
+    function placedNames(team) {
+        var o = {};
+        APP.edit[team].list.forEach(function(p) { o[p.name] = true; });
+        return o;
+    }
+    /* まだ盤に出していないスロットの番号一覧 */
+    function unplacedIdx(team) {
+        var sq = APP.squad[team] || [],
+            done = placedNames(team),
+            out = [];
+        sq.forEach(function(sl, i) { if (!done[sl.name]) out.push(i); });
+        return out;
+    }
+    function currentSlot(team) {
+        var un = unplacedIdx(team);
+        if (!un.length) return -1;
+        return (un.indexOf(APP.placeSlot) >= 0) ? APP.placeSlot : un[0];
+    }
     function editorPieceAt(id) {
         var teams = (APP.mode === 'online' || APP.mode === 'cpu') ? [APP.myTeam] : ['blue', 'red'];
         for (var i = 0; i < teams.length; i++) {
             var ed = APP.edit[teams[i]];
             for (var j = 0; j < ed.list.length; j++)
-                if (ed.list[j].pos === id) return {
-                    team: teams[i],
-                    idx: j,
-                    p: ed.list[j]
-                };
+                if (ed.list[j].pos === id) return { team: teams[i], idx: j, p: ed.list[j] };
         }
         return null;
     }
-
     function placeAt(id) {
         var team = placingTeam();
         if (APP.mode === 'online' && APP.myReady) {
             hint('「修正する」を押してから配置を変更してください');
             return;
         }
+        if (!APP.squad[team]) { hint('先に編成を済ませてください'); return; }
         var q = SQ[id];
         if (q.team !== team) {
             hint(id + ' は' + JPN[team] + 'の陣地ではありません');
@@ -1499,66 +2133,53 @@ if (typeof module !== 'undefined' && module.exports) {
             hint('そのマスには配置済みです');
             return;
         }
-        var ed = APP.edit[team],
-            pc = pools(ed);
-        if (pc[APP.placeRole] <= 0) {
-            hint('その役職はもう配置できません（駒をタップで回収）');
-            return;
-        }
-        ed.list.push({
-            role: APP.placeRole,
-            pos: id
-        });
-        pc = pools(ed);
-        if (pc[APP.placeRole] <= 0) APP.placeRole = (pc.soldier > 0) ? 'soldier' : (pc.mega > 0) ? 'mega' : (pc.flag > 0) ? 'flag' : APP.placeRole;
+        var idx = currentSlot(team);
+        if (idx < 0) { hint('8人すべて配置済みです（駒をタップで回収）'); return; }
+        var sl = APP.squad[team][idx];
+        APP.edit[team].list.push({ role: sl.role, pos: id, name: sl.name, wp: sl.wp });
+        var rest = unplacedIdx(team);
+        APP.placeSlot = rest.length ? rest[0] : 0;
         renderAll();
     }
-
     function removeEditorPiece(team, idx) {
         if (APP.mode === 'cpu' && team !== APP.myTeam) return;
         if (APP.mode === 'online' && (team !== APP.myTeam || APP.myReady)) {
             if (APP.myReady) hint('「修正する」を押してから変更してください');
             return;
         }
-        if (APP.mode !== 'online' && team !== APP.placeTeam) {
-            APP.placeTeam = team;
-        }
+        if (APP.mode !== 'online' && team !== APP.placeTeam) APP.placeTeam = team;
+        var nm = APP.edit[team].list[idx].name;
         APP.edit[team].list.splice(idx, 1);
+        var sq = APP.squad[team] || [];
+        for (var i = 0; i < sq.length; i++)
+            if (sq[i].name === nm) { APP.placeSlot = i; break; }
         renderAll();
     }
-
     function randFill(team) {
+        if (!APP.squad[team]) { hint('先に編成を済ませてください'); return; }
         var ed = APP.edit[team];
         var used = {};
-        ed.list.forEach(function(p) {
-            used[p.pos] = 1;
-        });
+        ed.list.forEach(function(p) { used[p.pos] = 1; });
         var cand = Object.values(SQ).filter(function(q) {
             return q.team === team && !used[q.id];
-        }).map(function(q) {
-            return q.id;
-        });
+        }).map(function(q) { return q.id; });
         for (var i = cand.length - 1; i > 0; i--) {
-            var j = Math.floor(Math.random() * (i + 1));
-            var t = cand[i];
+            var j = Math.floor(Math.random() * (i + 1)),
+                t = cand[i];
             cand[i] = cand[j];
             cand[j] = t;
         }
-        ['flag', 'mega', 'soldier'].forEach(function(role) {
-            var pc = pools(ed);
-            while (pc[role] > 0 && cand.length) {
-                ed.list.push({
-                    role: role,
-                    pos: cand.pop()
-                });
-                pc[role]--;
-            }
+        unplacedIdx(team).forEach(function(ix) {
+            if (!cand.length) return;
+            var sl = APP.squad[team][ix];
+            ed.list.push({ role: sl.role, pos: cand.pop(), name: sl.name, wp: sl.wp });
         });
+        APP.placeSlot = 0;
         renderAll();
     }
-
     function clearFill(team) {
         APP.edit[team].list = [];
+        APP.placeSlot = 0;
         renderAll();
     }
 
@@ -1580,10 +2201,12 @@ if (typeof module !== 'undefined' && module.exports) {
             }
         };
         APP.placeTeam = 'blue';
-        APP.placeRole = 'soldier';
+        APP.placeSlot = 0;
         APP.localFirst = null;
-        showScreen('scrGame');
-        renderAll();
+        APP.squadTeam = 'blue';
+        APP.letter = { blue: null, red: null };
+        APP.squad = { blue: null, red: null };
+        gotoSquad('blue');
     }
 
     function coinLocal() {
@@ -1601,17 +2224,17 @@ if (typeof module !== 'undefined' && module.exports) {
             hint('先攻を決めてください（🪙ボタン）');
             return;
         }
-        var eb = RULES.validatePlacement(APP.edit.blue.list, 'blue');
+        var eb = RULES.validatePlacement(APP.edit.blue.list, 'blue', APP.letter.blue);
         if (eb) {
             hint('青: ' + eb);
             return;
         }
-        var er = RULES.validatePlacement(APP.edit.red.list, 'red');
+        var er = RULES.validatePlacement(APP.edit.red.list, 'red', APP.letter.red);
         if (er) {
             hint('赤: ' + er);
             return;
         }
-        APP.g = RULES.newGame(APP.edit.blue.list, APP.edit.red.list, APP.localFirst);
+        APP.g = RULES.newGame(APP.edit.blue.list, APP.edit.red.list, APP.localFirst, { blue: APP.letter.blue, red: APP.letter.red });
         APP.histG = [];
         APP.selected = null;
         pzFit();
@@ -1628,9 +2251,17 @@ if (typeof module !== 'undefined' && module.exports) {
     }
     function pickOne(a) { return a[Math.floor(Math.random() * a.length)]; }
 
-    function cpuPlace(team) {
+    function cpuPlace(team, L, squad) {
+        var byRole = { soldier: [], mega: [], flag: [] };
+        squad.forEach(function (sl) { byRole[sl.role].push(sl); });
         var list = [], used = {};
-        function take(role, pos) { if (!pos || used[pos]) return false; used[pos] = 1; list.push({ role: role, pos: pos }); return true; }
+        function take(role, pos) {
+            if (!pos || used[pos] || !byRole[role].length) return false;
+            used[pos] = 1;
+            var sl = byRole[role].shift();
+            list.push({ role: role, pos: pos, name: sl.name, wp: sl.wp });
+            return true;
+        }
         var flagCands;
         if (team === 'red') {
             flagCands = Object.values(SQ).filter(function (q) { return q.room && ((parseInt(q.id.slice(1), 10) - 1) % 6) >= 4; }).map(function (q) { return q.id; });
@@ -1644,9 +2275,9 @@ if (typeof module !== 'undefined' && module.exports) {
         var corr = shuffleArr(Object.values(SQ).filter(function (q) { return q.kind === 'corridor' && q.team === team && !used[q.id]; }).map(function (q) { return q.id; }));
         take('mega', corr.pop());
         while (list.length < 8 && corr.length) take('soldier', corr.pop());
-        if (RULES.validatePlacement(list, team)) {
+        if (RULES.validatePlacement(list, team, L)) {
             var c2 = shuffleArr(Object.values(SQ).filter(function (q) { return q.team === team && q.kind !== 'honden'; }).map(function (q) { return q.id; }));
-            list = ['flag', 'mega', 'soldier', 'soldier', 'soldier', 'soldier', 'soldier', 'soldier'].map(function (r, i) { return { role: r, pos: c2[i] }; });
+            list = squad.map(function (sl, i) { return { role: sl.role, pos: c2[i], name: sl.name, wp: sl.wp }; });
         }
         return list;
     }
@@ -1666,20 +2297,26 @@ if (typeof module !== 'undefined' && module.exports) {
         APP.thinking = false;
         APP.cpuMem = {};
         APP.edit = { blue: { team: 'blue', list: [] }, red: { team: 'red', list: [] } };
-        APP.placeRole = 'soldier';
+        APP.placeSlot = 0;
+        APP.letter = { blue: null, red: null };
+        APP.squad = { blue: null, red: null };
+        /* AI のチームは、あなたが選ばなかった2つから抽選し、装備も自動で割り当てる */
+        var mine = APP.cpuOpt.letter || 'A';
+        var rest = SQUADS.filter(function (x) { return x !== mine; });
+        var cl = rest[Math.floor(Math.random() * rest.length)];
+        APP.letter[APP.cpuTeam] = cl;
+        APP.squad[APP.cpuTeam] = autoSquad(cl);
         hideBanner();
-        showScreen('scrGame');
-        zoomMyHalf();
-        renderAll();
-        hint('自陣に8人を配置して「▶開始」（兵6・📣1・🚩1）');
+        gotoSquad(t, mine);
     }
 
     function beginCpuGame() {
         var ed = APP.edit[APP.myTeam];
-        var err = RULES.validatePlacement(ed.list, APP.myTeam);
+        var err = RULES.validatePlacement(ed.list, APP.myTeam, APP.letter[APP.myTeam]);
         if (err) { hint(err); return; }
-        var cp = cpuPlace(APP.cpuTeam);
-        APP.g = RULES.newGame(APP.myTeam === 'blue' ? ed.list : cp, APP.myTeam === 'blue' ? cp : ed.list, APP.localFirst);
+        var cp = cpuPlace(APP.cpuTeam, APP.letter[APP.cpuTeam], APP.squad[APP.cpuTeam]);
+        APP.g = RULES.newGame(APP.myTeam === 'blue' ? ed.list : cp, APP.myTeam === 'blue' ? cp : ed.list, APP.localFirst,
+            { blue: APP.letter.blue, red: APP.letter.red });
         APP.histG = [];
         APP.selected = null;
         APP.cpuMem = {};
@@ -1720,6 +2357,7 @@ if (typeof module !== 'undefined' && module.exports) {
         N.on('meta', function(m) {
             var prev = APP.meta;
             APP.meta = m;
+            syncLetters(APP.meta);
             if (APP.screen === 'scrWait' && m.status !== 'waiting') {
                 enterPlacementOnline();
                 return;
@@ -1742,6 +2380,7 @@ if (typeof module !== 'undefined' && module.exports) {
                     m.v = (m.v || 1) + 1;
                     N.publishMeta(m);
                     APP.meta = m;
+                    syncLetters(APP.meta);
                 }
                 enterPlacementOnline();
                 return;
@@ -1791,18 +2430,23 @@ if (typeof module !== 'undefined' && module.exports) {
         var pb = N.places.blue,
             pr = N.places.red;
         if (!(pb && pb.ready && pr && pr.ready)) return;
-        var eb = RULES.validatePlacement(pb.list, 'blue');
+        var m = APP.meta || N.meta;
+        var lt = (m && m.letters) || {};
+        if (!lt.blue || !lt.red) {
+            hint('両者のチーム（A/B/C）が確定していません');
+            return;
+        }
+        var eb = RULES.validatePlacement(pb.list, 'blue', lt.blue);
         if (eb) {
             hint('青の配置エラー: ' + eb);
             return;
         }
-        var er = RULES.validatePlacement(pr.list, 'red');
+        var er = RULES.validatePlacement(pr.list, 'red', lt.red);
         if (er) {
             hint('赤の配置エラー: ' + er);
             return;
         }
-        var m = APP.meta || N.meta;
-        var g = RULES.newGame(pb.list, pr.list, m.firstTeam);
+        var g = RULES.newGame(pb.list, pr.list, m.firstTeam, { blue: lt.blue, red: lt.red });
         g.v = 0;
         N.publishGame(g);
         var m2 = JSON.parse(JSON.stringify(m));
@@ -1810,6 +2454,7 @@ if (typeof module !== 'undefined' && module.exports) {
         m2.v = (m2.v || 1) + 1;
         N.publishMeta(m2);
         APP.meta = m2;
+        syncLetters(APP.meta);
         adoptGame(N.game);
     }
     async function createOnline() {
@@ -1831,13 +2476,17 @@ if (typeof module !== 'undefined' && module.exports) {
         APP.oppOnline = false;
         var res = await N.createRoom(team, first, function(p) {
             msg.textContent = p;
-        });
+        }, APP.createOpt.letter);
         if (res.err) {
             msg.textContent = res.err;
             APP.mode = null;
             return;
         }
         APP.meta = res.meta;
+        syncLetters(APP.meta);
+        APP.letter = { blue: null, red: null };
+        APP.squad = { blue: null, red: null };
+        APP.letter[team] = APP.createOpt.letter;
         msg.textContent = '';
         showScreen('scrWait');
         renderWait();
@@ -1862,10 +2511,13 @@ if (typeof module !== 'undefined' && module.exports) {
         }
         APP.mode = 'online';
         APP.meta = res.meta;
+        syncLetters(APP.meta);
         APP.myTeam = res.team;
         APP.myReady = false;
         APP.oppReady = false;
         APP._recCode = N.code;
+        APP.letter = { blue: null, red: null };
+        APP.squad = { blue: null, red: null };
         msg.textContent = '';
         enterPlacementOnline();
     }
@@ -1883,6 +2535,7 @@ if (typeof module !== 'undefined' && module.exports) {
         }
         APP.mode = 'online';
         APP.meta = res.meta;
+        syncLetters(APP.meta);
         APP.myTeam = team;
         msg.textContent = '';
         var mine = N.places[team];
@@ -1912,7 +2565,12 @@ if (typeof module !== 'undefined' && module.exports) {
         APP.g = null;
         APP.selected = null;
         APP.histG = [];
-        APP.placeRole = 'soldier';
+        APP.placeSlot = 0;
+        /* 自分のチーム(A/B/C)と編成が未確定なら、まず編成画面へ */
+        if (!APP.letter[APP.myTeam] || !APP.squad[APP.myTeam]) {
+            gotoSquad(APP.myTeam);
+            return;
+        }
         var N = APP.net;
         if (N) {
             var mine = N.places[APP.myTeam];
@@ -1934,10 +2592,17 @@ if (typeof module !== 'undefined' && module.exports) {
         else pzTo(110, 84, 600, 640);
     }
 
+    /* meta に載っているチーム文字(A/B/C)をローカル状態へ取り込む */
+    function syncLetters(m) {
+        if (!m || !m.letters) return;
+        ['blue', 'red'].forEach(function(t) {
+            if (m.letters[t]) APP.letter[t] = m.letters[t];
+        });
+    }
     function readySet(on) {
         var ed = APP.edit[APP.myTeam];
         if (on) {
-            var err = RULES.validatePlacement(ed.list, APP.myTeam);
+            var err = RULES.validatePlacement(ed.list, APP.myTeam, APP.letter[APP.myTeam]);
             if (err) {
                 hint(err);
                 return;
@@ -1976,8 +2641,13 @@ if (typeof module !== 'undefined' && module.exports) {
         var prevActive = APP.g ? APP.g.activeTeam : null;
         var prevPhase = APP.g ? APP.g.phase : null;
         APP.g = gg;
+        if (gg.letters) {
+            APP.letter.blue = gg.letters.blue || APP.letter.blue;
+            APP.letter.red = gg.letters.red || APP.letter.red;
+        }
         APP.histG = [];
         APP.selected = null;
+        APP.target = null;
         if (APP.writeTimer) {
             clearTimeout(APP.writeTimer);
             APP.writeTimer = null;
@@ -2005,6 +2675,7 @@ if (typeof module !== 'undefined' && module.exports) {
 
     function resetForRematch(meta) {
         APP.meta = meta;
+        syncLetters(APP.meta);
         APP.g = null;
         APP.selected = null;
         APP.histG = [];
@@ -2092,6 +2763,59 @@ if (typeof module !== 'undefined' && module.exports) {
             markDirty(true);
             showBanner();
         } else markDirty(false);
+        renderAll();
+    }
+
+    function activeWeaponOf(s) {
+        if (!s || !s.alive || !s.wp) return null;
+        var w = WP[s.wp];
+        if (!w || w.kind !== 'active') return null;
+        if (w.once && APP.g.used[s.team][w.id]) return null;
+        return w;
+    }
+    /* 対象指定が要る装備品 */
+    function needsTarget(w) { return w && (w.id === 'hardgel' || w.id === 'daichari'); }
+
+    function useWeaponUI() {
+        if (!canAct() || !APP.selected) return;
+        var s = RULES.getS(APP.g, APP.selected);
+        var w = activeWeaponOf(s);
+        if (!w) { hint('いま使える装備品がありません'); return; }
+        if (needsTarget(w)) {
+            APP.target = s.sid;
+            hint('対象にする敵の駒をタップしてください');
+            renderAll();
+            return;
+        }
+        applyWeapon(s.sid, null);
+    }
+    function applyWeapon(sid, targetSid) {
+        APP.histG.push(JSON.parse(JSON.stringify(APP.g)));
+        var r = RULES.useWeapon(APP.g, sid, targetSid);
+        APP.target = null;
+        if (!r.ok) {
+            APP.histG.pop();
+            hint(r.err);
+            renderAll();
+            return;
+        }
+        APP.selected = null;
+        markDirty(true);
+        if (APP.g.phase === 'over') showBanner();
+        renderAll();
+    }
+    function maebaUI() {
+        if (!canAct() || !APP.selected) return;
+        APP.histG.push(JSON.parse(JSON.stringify(APP.g)));
+        var r = RULES.maebaMove(APP.g, APP.selected);
+        if (!r.ok) {
+            APP.histG.pop();
+            hint(r.err);
+            return;
+        }
+        APP.selected = null;
+        markDirty(true);
+        if (APP.g.phase === 'over') showBanner();
         renderAll();
     }
 
@@ -2340,6 +3064,17 @@ if (typeof module !== 'undefined' && module.exports) {
         }
         if (d.pid) {
             var s = RULES.getS(APP.g, d.pid);
+            /* 装備品の対象選択中なら、敵の駒タップで発動 */
+            if (APP.target) {
+                if (s && s.alive && s.team !== RULES.getS(APP.g, APP.target).team) {
+                    applyWeapon(APP.target, s.sid);
+                } else {
+                    APP.target = null;
+                    hint('対象の指定を取り消しました');
+                    renderAll();
+                }
+                return;
+            }
             var mine = s && s.alive && ((APP.mode === 'online' || APP.mode === 'cpu') ? (s.team === APP.myTeam && canAct()) : (s.team === APP.g.activeTeam));
             if (mine) setSelected(s.sid);
             else {
@@ -2502,25 +3237,29 @@ if (typeof module !== 'undefined' && module.exports) {
             });
         }
         /* 駒 */
-        function pieceSvg(team, role, num, pos, pid) {
+        function pieceSvg(team, role, label, pos, pid, wp) {
             var c = centerOf(pos);
             var s = '<circle data-pid="' + pid + '" cx="' + c[0] + '" cy="' + c[1] + '" r="14" fill="' + ((team === 'blue') ? COL.blueDark : COL.redDark) + '" stroke="#ffffff" stroke-width="2"/>';
-            var gch = (role === 'flag') ? '🚩' : (role === 'mega') ? '📣' : String(num);
-            s += '<text x="' + c[0] + '" y="' + (c[1] + 4) + '" text-anchor="middle" font-size="' + ((role === 'soldier') ? 12 : 13) + '" font-weight="700" fill="#fff">' + gch + '</text>';
+            var nm = String(label == null ? '' : label);
+            var fs = (nm.length >= 3) ? 8 : (nm.length === 2) ? 10.5 : 13;
+            s += '<text x="' + c[0] + '" y="' + (c[1] + 3.5) + '" text-anchor="middle" font-size="' + fs + '" font-weight="700" fill="#fff" pointer-events="none">' + esc(nm) + '</text>';
+            var gch = RULES.roleGlyph(role);
+            if (gch) s += '<text x="' + (c[0] + 12) + '" y="' + (c[1] - 8) + '" text-anchor="middle" font-size="10" pointer-events="none">' + gch + '</text>';
+            if (wp) s += '<circle cx="' + (c[0] - 11) + '" cy="' + (c[1] + 10) + '" r="3.6" fill="#e8c25a" stroke="#14171b" stroke-width="1" pointer-events="none"/>';
             return s;
         }
         if (!g) {
             var teams = (APP.mode === 'online' || APP.mode === 'cpu') ? [APP.myTeam] : ['blue', 'red'];
             teams.forEach(function(tm) {
                 APP.edit[tm].list.forEach(function(p, i) {
-                    out += pieceSvg(tm, p.role, i + 1, p.pos, 'pl-' + tm + '-' + i);
+                    out += pieceSvg(tm, p.role, p.name, p.pos, 'pl-' + tm + '-' + i, p.wp);
                 });
             });
         } else {
             g.soldiers.forEach(function(s) {
                 if (!s.alive) return;
                 if (fogTeam && s.team !== fogTeam && !vis.has(s.pos)) return;
-                out += pieceSvg(s.team, s.role, s.num, s.pos, s.sid);
+                out += pieceSvg(s.team, s.role, s.name, s.pos, s.sid, s.wp);
             });
         }
         /* 選択とハイライト */
@@ -2609,7 +3348,13 @@ if (typeof module !== 'undefined' && module.exports) {
             return;
         }
         var s = APP.selected ? RULES.getS(g, APP.selected) : null;
-        if (s) el.innerHTML = '選択中: <b>' + esc(RULES.plbl(s)) + '</b>（' + esc(s.pos) + '）残り<b>' + s.steps + '</b>歩' + (s.locked ? '　<span class="mut">※潜伏所に入ったので今ターンは終了</span>' : '');
+        if (s) {
+            var wtxt = s.wp ? '　<span class="tag">' + esc(wpName(s.wp)) + '</span>' : '';
+            el.innerHTML = '選択中: <b>' + esc(RULES.plbl(s)) + '</b>（' + s.year + '／' + sexJP(s.sex) + '）' +
+                esc(s.pos) + '　残り<b>' + s.steps + '</b>歩' + wtxt +
+                (s.locked ? '　<span class="mut">※潜伏所に入ったので今ターンは終了</span>' : '') +
+                (s.wp && WP[s.wp] ? '<div class="small mut">' + esc(WP[s.wp].desc) + '</div>' : '');
+        }
         else if (APP.mode === 'cpu' && (APP.thinking || g.activeTeam !== APP.myTeam)) el.innerHTML = '<span class="mut">🤖 AIが考えています…</span>';
         else if (APP.mode === 'online' && g.activeTeam !== APP.myTeam) el.innerHTML = '<span class="mut">相手のターンです。相手が動かすと即座に反映されます</span>' + (APP.oppOnline ? '' : ' <span class="ng">（相手の接続が切れています）</span>');
         else el.innerHTML = '自分の駒をタップ → 金色に光った隣マスをタップで1歩ずつ移動';
@@ -2628,16 +3373,24 @@ if (typeof module !== 'undefined' && module.exports) {
             return;
         }
         if (!g) {
-            var pt = placingTeam(),
-                pc = pools(APP.edit[pt]);
+            var pt = placingTeam();
             if (APP.mode === 'local') {
                 h += btn('tab-blue', '青' + (APP.edit.blue.list.length) + '/8', APP.placeTeam === 'blue' ? 'on' : '') +
                     btn('tab-red', '赤' + (APP.edit.red.list.length) + '/8', APP.placeTeam === 'red' ? 'on' : '');
             }
-            h += btn('role-soldier', '兵×' + pc.soldier, APP.placeRole === 'soldier' ? 'on' : '', pc.soldier <= 0) +
-                btn('role-mega', '📣×' + pc.mega, APP.placeRole === 'mega' ? 'on' : '', pc.mega <= 0) +
-                btn('role-flag', '🚩×' + pc.flag, APP.placeRole === 'flag' ? 'on' : '', pc.flag <= 0) +
-                btn('rand', '🎲', '') + btn('clear', 'クリア', '');
+            var un = unplacedIdx(pt),
+                cur = currentSlot(pt),
+                sq = APP.squad[pt] || [];
+            if (cur >= 0) {
+                var sl = sq[cur],
+                    mm = memberOf(APP.letter[pt], sl.name);
+                h += btn('slot-prev', '◀', '', un.length < 2) +
+                    '<span class="tag">' + esc(RULES.slotLabel(mm, sl.role, sl.wp)) + '</span>' +
+                    btn('slot-next', '▶', '', un.length < 2);
+            } else {
+                h += '<span class="tag">8人すべて配置済み</span>';
+            }
+            h += btn('squad-edit', '編成', '') + btn('rand', '🎲', '') + btn('clear', 'クリア', '');
             if (APP.mode === 'online') {
                 h += APP.myReady ? btn('unready', '✋修正する', 'warn') : btn('ready', '✓準備完了', 'primary', APP.edit[pt].list.length !== 8);
             } else if (APP.mode === 'cpu') {
@@ -2647,6 +3400,14 @@ if (typeof module !== 'undefined' && module.exports) {
             }
         } else if (g.phase === 'play') {
             var mine = canAct();
+            var sel = APP.selected ? RULES.getS(g, APP.selected) : null;
+            if (APP.target) {
+                h += '<span class="tag" id="targetNote">対象の敵をタップ</span>' + btn('cancel-target', '取消', 'warn');
+            } else if (sel && mine) {
+                if (sel.maebaReady) h += btn('maeba', '🦷 突進する', 'warn');
+                var aw = activeWeaponOf(sel);
+                if (aw) h += btn('usewp', '⚡ ' + aw.name, 'warn');
+            }
             h += btn('end', 'ターン終了', 'primary', !mine);
         } else {
             h += btn('result', '結果', '');
@@ -2688,6 +3449,9 @@ if (typeof module !== 'undefined' && module.exports) {
         ].forEach(function(p) {
             $(p[0]).classList.toggle('on', APP.createOpt.team === p[1]);
         });
+        ['A', 'B', 'C'].forEach(function(x) {
+            $('optL' + x).classList.toggle('on', APP.createOpt.letter === x);
+        });
         [
             ['optFC', 'coin'],
             ['optFB', 'blue'],
@@ -2706,6 +3470,9 @@ if (typeof module !== 'undefined' && module.exports) {
         });
         [['cpuL1', 'weak'], ['cpuL2', 'strong'], ['cpuL3', 'max']].forEach(function (p) {
             var el = $(p[0]); if (el) el.classList.toggle('on', APP.cpuOpt.level === p[1]);
+        });
+        ['A', 'B', 'C'].forEach(function (x) {
+            var el = $('cpuL' + x); if (el) el.classList.toggle('on', APP.cpuOpt.letter === x);
         });
     }
 
@@ -2846,25 +3613,68 @@ if (typeof module !== 'undefined' && module.exports) {
                 break;
             case 'tab-blue':
                 APP.placeTeam = 'blue';
-                APP.placeRole = 'soldier';
+                APP.placeSlot = 0;
                 renderAll();
                 break;
             case 'tab-red':
                 APP.placeTeam = 'red';
-                APP.placeRole = 'soldier';
+                APP.placeSlot = 0;
                 renderAll();
                 break;
-            case 'role-soldier':
-                APP.placeRole = 'soldier';
+            case 'slot-prev':
+            case 'slot-next': {
+                var pt2 = placingTeam(),
+                    un2 = unplacedIdx(pt2);
+                if (un2.length) {
+                    var at = un2.indexOf(currentSlot(pt2));
+                    if (at < 0) at = 0;
+                    at = (act === 'slot-next') ? (at + 1) % un2.length : (at - 1 + un2.length) % un2.length;
+                    APP.placeSlot = un2[at];
+                    renderAll();
+                }
+                break;
+            }
+            case 'squad-edit':
+                if (APP.mode === 'online' && APP.myReady) { hint('「修正する」を押してから編成を変えてください'); break; }
+                APP.squadTeam = placingTeam();
+                showScreen('scrSquad');
+                renderSquad();
+                break;
+            case 'usewp':
+                useWeaponUI();
+                break;
+            case 'maeba':
+                maebaUI();
+                break;
+            case 'cancel-target':
+                APP.target = null;
                 renderAll();
                 break;
-            case 'role-mega':
-                APP.placeRole = 'mega';
-                renderAll();
+            case 'squad-done':
+                squadDone();
                 break;
-            case 'role-flag':
-                APP.placeRole = 'flag';
-                renderAll();
+            case 'squad-auto':
+                squadAuto();
+                break;
+            case 'squad-back':
+                squadBack();
+                break;
+            case 'squad-letter-A':
+            case 'squad-letter-B':
+            case 'squad-letter-C':
+                setLetter(squadEditTeam(), act.slice(-1));
+                break;
+            case 'opt-letter-A':
+            case 'opt-letter-B':
+            case 'opt-letter-C':
+                APP.createOpt.letter = act.slice(-1);
+                renderCreate();
+                break;
+            case 'cpu-letter-A':
+            case 'cpu-letter-B':
+            case 'cpu-letter-C':
+                APP.cpuOpt.letter = act.slice(-1);
+                renderCpuOpts();
                 break;
             case 'rand':
                 randFill(placingTeam());
@@ -3041,7 +3851,7 @@ function threatSet(gb, myTeam) {
   const set = new Set();
   for (const e of gb.soldiers) {
     if (!e.alive || e.team === myTeam) continue;
-    const tmp = Object.assign({}, e, { steps: (e.role === 'mega') ? 6 : 4 });
+    const tmp = Object.assign({}, e, { steps: RULES.stepsFor(gb, e) });
     const rr = reach(gb, tmp);
     for (const id in rr) set.add(id);
   }
@@ -3200,7 +4010,7 @@ const MY2_PARAMS = [
 
 function beginTurnFor(g, team) {
   g.activeTeam = team;
-  g.soldiers.forEach(s => { if (s.team === team && s.alive) { s.steps = (s.role === 'mega') ? 6 : 4; s.locked = false; } });
+  g.soldiers.forEach(s => { if (s.team === team && s.alive) { s.steps = RULES.stepsFor(g, s); s.locked = false; } });
 }
 function terminalVal(g, team) {
   return (g.winner === team) ? 1e9 : (g.winner === OTHER[team] ? -1e9 : -2e4);
@@ -3244,7 +4054,7 @@ function updateMemory(g, team, mem) {
   const visibleEnemySids = new Set();
   for (const s of g.soldiers) {
     if (s.alive && s.team !== team && vis.has(s.pos)) {
-      mem.ghosts[s.sid] = { sid: s.sid, pos: s.pos, role: s.role, seen: g.turn };
+      mem.ghosts[s.sid] = { sid: s.sid, pos: s.pos, role: s.role, name: s.name, seen: g.turn };
       visibleEnemySids.add(s.sid);
     }
   }
@@ -3262,6 +4072,7 @@ function beliefBoard(g, team, mem) {
   const mineAlive = g.soldiers.filter(s => s.alive && s.team === team).map(s => clone(s));
   const ghosts = Object.values(mem.ghosts).map(gh => ({
     sid: gh.sid, team: OTHER[team], role: gh.role || 'soldier', num: 0,
+    name: gh.name || '？', year: 79, sex: 'M', wp: null,
     pos: gh.pos, alive: true, steps: 0, locked: false
   }));
   gb.soldiers = mineAlive.concat(ghosts);
