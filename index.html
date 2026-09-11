@@ -120,18 +120,6 @@ details li{margin:6px 0;color:#c6cdd5}
 .wpBar{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .wpBar .tag{font-size:11px;color:var(--gold);border:1px solid var(--gold);border-radius:999px;padding:2px 8px}
 #targetNote{color:var(--gold);font-weight:700}
-/* 常時効果パネル（盤面上部・中央に常時表示） */
-#fxPanel{position:absolute;left:50%;transform:translateX(-50%);top:6px;z-index:12;
-  display:flex;gap:5px;flex-wrap:wrap;justify-content:center;max-width:94%;
-  pointer-events:none}
-#fxPanel .fx{font-size:11px;line-height:1.35;padding:3px 8px;border-radius:999px;
-  background:rgba(20,23,27,.92);border:1px solid var(--line);white-space:nowrap;
-  box-shadow:0 1px 4px rgba(0,0,0,.5)}
-#fxPanel .fx.me{border-color:var(--gold);color:#f5e6bd}
-#fxPanel .fx.foe{border-color:#8a5a55;color:#e8b0aa}
-#fxPanel .fxNone{font-size:11px;color:var(--mut);background:rgba(20,23,27,.85);
-  border:1px solid var(--line);border-radius:999px;padding:3px 10px}
-#boardBox{position:relative}
 
 /* 単発発動の中央ポップアップ */
 #wpPop{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;
@@ -162,6 +150,65 @@ details li{margin:6px 0;color:#c6cdd5}
 .wpRef .kd{font-size:10.5px;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:1px 7px;margin-left:6px;white-space:nowrap}
 .wpRef .ds{font-size:11.5px;color:#c6cdd5;line-height:1.55;margin-top:3px}
 .wpRef .ow{font-size:11px;color:var(--blue);margin-top:3px}
+/* ===== スマホ最適化 ===== */
+/* 常時効果：盤面の外で1行固定・横スクロール（多い時はタップで展開） */
+#fxPanel{display:flex;flex-wrap:nowrap;gap:5px;align-items:center;margin:6px 0 4px;
+  overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+#fxPanel::-webkit-scrollbar{display:none}
+#fxPanel.open{flex-wrap:wrap;overflow:visible}
+#fxPanel .fx{font-size:11px;line-height:1.35;padding:3px 8px;border-radius:999px;
+  background:#1e232a;border:1px solid var(--line);white-space:nowrap;flex:0 0 auto}
+#fxPanel .fx.me{border-color:var(--gold);color:#f5e6bd}
+#fxPanel .fx.foe{border-color:#8a5a55;color:#e8b0aa}
+#fxPanel .fxNone{font-size:11px;color:var(--mut);white-space:nowrap;flex:0 0 auto}
+#fxPanel .fxMore{font-size:11px;color:var(--gold);background:#2a313a;border:1px solid var(--gold);
+  border-radius:999px;padding:3px 9px;white-space:nowrap;flex:0 0 auto;min-height:0;cursor:pointer}
+
+/* 自軍の駒バー：タップでその駒へジャンプ＋選択 */
+#pieceBar{display:flex;gap:6px;margin:4px 0 6px;overflow-x:auto;-webkit-overflow-scrolling:touch;
+  scrollbar-width:none}
+#pieceBar::-webkit-scrollbar{display:none}
+#pieceBar button{flex:0 0 auto;min-height:44px;padding:5px 9px;font-size:12px;line-height:1.25;
+  text-align:center;white-space:nowrap}
+#pieceBar button.on{border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold);color:#f5e6bd}
+#pieceBar button.spent{opacity:.42}
+#pieceBar .st{display:block;font-size:10.5px;color:var(--mut)}
+#pieceBar button.on .st{color:#f5e6bd}
+
+/* 配置の人選び：横1行スクロールに */
+#slotPick{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;
+  margin:6px 0}
+#slotPick::-webkit-scrollbar{display:none}
+#slotPick button{flex:0 0 auto;min-height:48px;white-space:nowrap}
+#slotPick .hd{display:none}
+
+/* タップ目標を44px以上に（select がボタンより小さかった） */
+select{min-height:44px}
+#squadSlots select{min-height:44px}
+
+/* ログは既定で畳む */
+#logWrap{margin:8px 0}
+#logWrap>summary{font-size:13px;color:var(--mut);letter-spacing:2px;cursor:pointer;padding:6px 0}
+#logWrap #logEl{max-height:180px;overflow-y:auto}
+
+@media (max-width:520px){
+  /* ヘッダーを1行に収める */
+  #bar{flex-wrap:nowrap;gap:6px;padding:6px 10px;padding-top:calc(6px + env(safe-area-inset-top))}
+  #bar .logo-bar{max-height:26px}
+  #statusEl{font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #roomBadge{font-size:11px;padding:4px 7px;min-height:32px;white-space:nowrap;
+    max-width:96px;overflow:hidden;text-overflow:ellipsis}
+  #roomBadge.open{max-width:none;position:absolute;top:100%;right:8px;z-index:22;
+    background:#1e232a;border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+  #netBadge{font-size:10.5px;white-space:nowrap}
+  /* 案内文を1行に抑える */
+  #selInfo{font-size:12px;padding:7px 10px}
+  #selInfo .small{font-size:11px}
+  /* 編成カードを詰める */
+  .slotCard{padding:8px 10px;margin:6px 0}
+  .slotRow label{min-width:44px}
+  .wpNote{font-size:11px}
+}
 </style>
 </head>
 <body>
@@ -200,7 +247,7 @@ details li{margin:6px 0;color:#c6cdd5}
   <div id="timerWrap" class="hidden">⏱<span id="timerV">30</span></div>
   <div class="grow"></div>
   <div id="netBadge" class="mut"></div>
-  <div id="roomBadge" class="mut"></div>
+  <button id="roomBadge" class="mut ghost" data-act="toggle-room"></button>
   <select id="viewSel" class="hidden">
     <option value="god">全体</option>
     <option value="blue">青視点</option>
@@ -351,11 +398,15 @@ details li{margin:6px 0;color:#c6cdd5}
 <section id="scrGame" class="screen hidden">
   <div id="selInfo"></div>
   <div id="slotPick"></div>
-  <div id="boardBox"><div id="fxPanel"></div>
+  <div id="fxPanel"></div>
+  <div id="pieceBar"></div>
+  <div id="boardBox">
     <svg id="board" viewBox="0 0 816 1336" xmlns="http://www.w3.org/2000/svg"></svg>
   </div>
-  <h3>ログ</h3>
-  <div id="logEl"></div>
+  <details id="logWrap">
+    <summary>ログ</summary>
+    <div id="logEl"></div>
+  </details>
   <details>
     <summary>ルール早見表</summary>
     <ul>
@@ -1908,6 +1959,8 @@ if (typeof module !== 'undefined' && module.exports) {
         squad: { blue: null, red: null },
         target: null,
         inspect: null,
+        fxOpen: false,
+        roomOpen: false,
         localFirst: null,
         createOpt: {
             team: 'random',
@@ -2685,8 +2738,8 @@ if (typeof module !== 'undefined' && module.exports) {
     }
 
     function zoomMyHalf() {
-        if (APP.myTeam === 'red') pzTo(120, 760, 470, 500);
-        else pzTo(120, 90, 470, 500);
+        zoomForCell(34);
+        panTo(APP.myTeam === 'red' ? 'B20' : 'A10');
     }
 
     /* meta に載っているチーム文字(A/B/C)をローカル状態へ取り込む */
@@ -2871,14 +2924,58 @@ if (typeof module !== 'undefined' && module.exports) {
         if (!g || g.phase !== 'play') { el.innerHTML = ''; return; }
         var viewTeam = (APP.mode === 'local') ? (APP.view === 'god' ? null : APP.view) : APP.myTeam;
         var list = RULES.activeEffects(g, viewTeam);
-        if (!list.length) { el.innerHTML = '<span class="fxNone">常時効果なし</span>'; return; }
-        el.innerHTML = list.map(function(e) {
+        if (!list.length) {
+            el.className = '';
+            el.innerHTML = '<span class="fxNone">常時効果なし</span>';
+            return;
+        }
+        el.className = APP.fxOpen ? 'open' : '';
+        var chips = list.map(function(e) {
             var cls = e.mine ? 'me' : 'foe';
             if (e.wp === 'zutaiDown')
                 return '<span class="fx ' + cls + '">' + JPN[e.team] + ' 全員 −2（関原 戦死）</span>';
             var w = WP[e.wp];
             return '<span class="fx ' + cls + '">' + esc(e.name) + '：' + esc(w.alias || w.name) + '</span>';
+        });
+        var h = chips.join('');
+        if (chips.length > 2) h += '<button class="fxMore" data-act="fx-toggle">' + (APP.fxOpen ? '閉じる' : '⚡' + chips.length) + '</button>';
+        el.innerHTML = h;
+    }
+
+    /* ---------- 自軍の駒バー（タップでその駒へジャンプ＋選択） ---------- */
+    function renderPieceBar() {
+        var el = $('pieceBar');
+        if (!el) return;
+        var g = APP.g;
+        if (!g || g.phase !== 'play' || APP.screen !== 'scrGame') { el.innerHTML = ''; return; }
+        var team = (APP.mode === 'local') ? g.activeTeam : APP.myTeam;
+        var mine = g.soldiers.filter(function(s) { return s.alive && s.team === team; });
+        if (!mine.length) { el.innerHTML = ''; return; }
+        el.innerHTML = mine.map(function(s) {
+            var spent = (s.steps <= 0 || s.locked);
+            var cls = (APP.selected === s.sid ? 'on ' : '') + (spent ? 'spent' : '');
+            return '<button data-act="pb-' + s.sid + '" class="' + cls + '">' +
+                esc(s.name) + RULES.roleGlyph(s.role) +
+                '<span class="st">' + (s.locked ? '潜伏' : s.steps + '歩') + '</span></button>';
         }).join('');
+    }
+
+    /* 指定マスが画面の中心に来るようカメラを移す */
+    function panTo(pos) {
+        if (!SQ[pos]) return;
+        var c = centerOf(pos);
+        PZ.h = PZ.w * PZ.ch / PZ.cw;
+        PZ.x = c[0] - PZ.w / 2;
+        PZ.y = c[1] - PZ.h / 2;
+        pzClamp();
+        pzApply();
+    }
+    /* 1マスが minCell px 以上に見えるズーム率へ寄せる */
+    function zoomForCell(minCell) {
+        pzResize();
+        var want = 40 * PZ.cw / minCell;
+        PZ.w = Math.min(PZ.fitW, Math.max(PZ.minW, want));
+        pzClamp();
     }
 
     /* ---------- 単発発動の中央ポップアップ ---------- */
@@ -2939,6 +3036,8 @@ if (typeof module !== 'undefined' && module.exports) {
         if (!tr.length) { doneCb(); return; }
         stopAnim();
         APP.animPos = {};
+        /* 再生前の視点を覚えておき、終わったら元に戻す（自分の駒を見失わないように） */
+        var cam = { x: PZ.x, y: PZ.y, w: PZ.w };
         var i = 0;
         /* 手数が多いときはテンポを上げ、全体で2秒前後に収める */
         var wait = Math.max(70, Math.min(180, Math.round(2000 / tr.length)));
@@ -2946,9 +3045,16 @@ if (typeof module !== 'undefined' && module.exports) {
         tr.forEach(function(e) { if (APP.animPos[e.sid] === undefined) APP.animPos[e.sid] = e.from; });
         renderBoard();
         function tick() {
-            if (i >= tr.length) { stopAnim(); doneCb(); return; }
+            if (i >= tr.length) {
+                stopAnim();
+                PZ.x = cam.x; PZ.y = cam.y; PZ.w = cam.w;
+                pzClamp(); pzApply();
+                doneCb();
+                return;
+            }
             var e = tr[i++];
             APP.animPos[e.sid] = e.to;
+            if (APP.followCam !== false) panTo(e.to);   /* 動いた先へカメラを追従 */
             renderBoard();
             APP._animT = setTimeout(tick, wait);
         }
@@ -3531,6 +3637,7 @@ if (typeof module !== 'undefined' && module.exports) {
         }
         st.classList.toggle('pulse', pulse);
         var rb = $('roomBadge');
+        rb.classList.toggle('open', !!APP.roomOpen);
         rb.textContent = (APP.mode === 'online' && APP.net && APP.net.code) ? ('部屋 ' + APP.net.code + '｜' + JPN[APP.myTeam] + (APP.net.host ? '(ホスト)' : '')) :
             (APP.mode === 'cpu' && APP.myTeam) ? ('AI対戦｜あなた=' + JPN[APP.myTeam] + '｜AI=' + ({ weak: 'よわい', strong: 'つよい', max: 'さいきょう' }[APP.cpuOpt.level] || '')) : '';
         var vs = $('viewSel');
@@ -3600,7 +3707,7 @@ if (typeof module !== 'undefined' && module.exports) {
         }
         else if (APP.mode === 'cpu' && (APP.thinking || g.activeTeam !== APP.myTeam)) el.innerHTML = '<span class="mut">🤖 AIが考えています…</span>';
         else if (APP.mode === 'online' && g.activeTeam !== APP.myTeam) el.innerHTML = '<span class="mut">相手のターンです。相手が動かすと即座に反映されます</span>' + (APP.oppOnline ? '' : ' <span class="ng">（相手の接続が切れています）</span>');
-        else el.innerHTML = '自分の駒をタップ → 金色に光った隣マスをタップで1歩ずつ移動';
+        else el.innerHTML = '駒をタップ → 光ったマスへ1歩ずつ<span class="mut small">（下のバーからも選べます）</span>';
     }
 
     function btn(act, label, cls, dis) {
@@ -3718,6 +3825,7 @@ if (typeof module !== 'undefined' && module.exports) {
         renderBar();
         renderInfo();
         renderSlotPick();
+        renderPieceBar();
         renderBottom();
         renderBoard();
         renderFx();
@@ -3752,6 +3860,28 @@ if (typeof module !== 'undefined' && module.exports) {
 
     /* ---------- アクション分配 ---------- */
     function dispatch(act) {
+        /* 自軍バーの駒：その駒へジャンプして選択 */
+        if (act.indexOf('pb-') === 0) {
+            var sid = act.slice(3);
+            var sp = RULES.getS(APP.g, sid);
+            if (!sp || !sp.alive) return;
+            var canPick = (APP.mode === 'local') ? (sp.team === APP.g.activeTeam) : (sp.team === APP.myTeam && canAct());
+            APP.inspect = null;
+            if (canPick) APP.selected = (APP.selected === sid) ? null : sid;
+            panTo(sp.pos);
+            renderAll();
+            return;
+        }
+        if (act === 'fx-toggle') {
+            APP.fxOpen = !APP.fxOpen;
+            renderFx();
+            return;
+        }
+        if (act === 'toggle-room') {
+            APP.roomOpen = !APP.roomOpen;
+            $('roomBadge').classList.toggle('open', APP.roomOpen);
+            return;
+        }
         if (act.indexOf('pick-') === 0) {
             var pi = parseInt(act.slice(5), 10);
             var pt3 = placingTeam();
