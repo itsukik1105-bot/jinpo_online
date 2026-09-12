@@ -105,3 +105,29 @@ push後、ブラウザで
 
 これをやると 400KB → 60KB 程度まで軽くなり、通信も自分の管理下に入ります。
 ただし Cloudflare のアカウント登録が必要です。
+
+---
+
+## 自動対戦シミュレーター
+
+SMART AI に任意発動の装備品判断を追加し、同じ `index.html` のルールを Node.js から読み込んで大量対戦できます。通常プレイ画面とは分離されており、検証結果は CSV/JSON に出力されます。
+
+```bash
+node tools/jinpo-sim-runner.mjs --games 2000 --seed 1105 --out sim-results
+```
+
+より重い「さいきょう」相当の先読みで回す場合:
+
+```bash
+node tools/jinpo-sim-runner.mjs --games 10000 --level max --seed 1105 --out sim-results-max
+```
+
+出力:
+
+- `summary.json`: 全体集計、A/B/C相性、戦術別、装備寄与、シナジー、発動タイミング
+- `games.csv`: 1局ごとの条件と結果
+- `matchups.csv`: チーム相性・先後
+- `weapon_stats.csv`: 装備単体の勝率寄与
+- `weapon_synergies.csv`: 装備ペアのシナジー
+- `activation_timing.csv`: 任意発動装備の使用回数・平均ターン
+- `best_loadouts.csv`: 対チーム・戦術別の好成績装備セット

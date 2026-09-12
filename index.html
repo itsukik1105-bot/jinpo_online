@@ -4357,9 +4357,137 @@ function evalState(g, team) {
   return sc;
 }
 
-// ---------- candidate parameter sets ----------
-function candidateParams(g, team) {
+// ---------- active weapon usage ----------
+function pieceValue(s) {
+  if (!s) return 0;
+  let v = s.role === 'flag' ? 9000 : (s.role === 'mega' ? 1700 : 1000);
+  if (s.wp === 'zutai') v += 1600;
+  else if (s.wp === 'charisma') v += 900;
+  else if (s.wp === 'kusaidama' || s.wp === 'phoenix') v += 650;
+  else if (s.wp) v += 260;
+  return v;
+}
+function lockableByGakureki(g, team) {
+  const foe = OTHER[team];
+  return g.soldiers.filter(s => s.alive && s.team === foe && GAKUREKI_FREE.indexOf(s.name) < 0).length;
+}
+function weaponThreshold(tactic, afterMove) {
+  const base = { rush: 95, guard: 155, stealth: 105, annihilate: 80, honden: 85 };
+  return (base[tactic] || 115) + (afterMove ? 30 : 0);
+}
+function weaponActionCandidates(g, team, tactic) {
+  const foe = OTHER[team];
+  const vis = RULES.visibleSquares(g, team);
   const out = [];
+  aliveList(g, team).forEach(s => {
+    if (!s.wp) return;
+    const w = WP[s.wp];
+    if (!w || w.kind !== 'active') return;
+    if (s.maebaReady) out.push({ kind: 'maebaMove', sid: s.sid, wp: 'maeba' });
+    if (w.once && g.used[team][w.id]) return;
+    if (w.id === 'hardgel') {
+      g.soldiers.forEach(v => {
+        if (v.alive && v.team === foe && v.sex === 'F' && vis.has(v.pos)) {
+          out.push({ kind: 'use', sid: s.sid, wp: w.id, targetSid: v.sid });
+        }
+      });
+    } else if (w.id === 'daichari') {
+      g.soldiers.forEach(v => {
+        if (v.alive && v.team === foe && SQ[v.pos].kind !== 'T' && corrIndex(v.pos) && vis.has(v.pos)) {
+          out.push({ kind: 'use', sid: s.sid, wp: w.id, targetSid: v.sid });
+        }
+      });
+    } else if (w.id === 'fuhou') {
+      if (g.soldiers.some(v => v.alive && v.team === foe && SQ[v.pos].kind === 'T')) {
+        out.push({ kind: 'use', sid: s.sid, wp: w.id });
+      }
+    } else if (w.id === 'gakureki') {
+      if (lockableByGakureki(g, team) > 0) out.push({ kind: 'use', sid: s.sid, wp: w.id });
+    } else if (w.id === 'comic') {
+      if (floorOfPos(s.pos)) out.push({ kind: 'use', sid: s.sid, wp: w.id });
+    } else if (w.id === 'funnel') {
+      if (aliveList(g, foe).length) out.push({ kind: 'use', sid: s.sid, wp: w.id });
+    } else if (w.id === 'maeba') {
+      const d = DIST[team][s.pos] ?? MAXD;
+      const wantsCharge = tactic === 'rush' || tactic === 'honden' || tactic === 'annihilate';
+      if (!s.maebaDeclared && corrIndex(s.pos) && (wantsCharge || d <= 18)) {
+        out.push({ kind: 'use', sid: s.sid, wp: w.id });
+      }
+    }
+  });
+  return out;
+}
+function scoreWeaponAction(g, action, team, tactic) {
+  const s = RULES.getS(g, action.sid);
+  if (!s) return -1e18;
+  const foe = OTHER[team];
+  if (action.wp === 'funnel') {
+    const enemies = aliveList(g, foe);
+    if (!enemies.length) return -1e18;
+    const avg = enemies.reduce((sum, v) => sum + pieceValue(v), 0) / enemies.length;
+    const flagChance = enemies.some(v => v.role === 'flag') ? (1 / enemies.length) : 0;
+    const behind = RULES.aliveCount(g, team) < RULES.aliveCount(g, foe) ? 520 : 0;
+    return avg - pieceValue(s) + flagChance * 6500 + behind;
+  }
+  if (action.wp === 'gakureki') {
+    return lockableByGakureki(g, team) * 420 + (tactic === 'guard' ? 140 : 0);
+  }
+  if (action.wp === 'maeba' && action.kind === 'use') {
+    const d = DIST[team][s.pos] ?? MAXD;
+    return Math.max(0, (22 - d) * 18) + (tactic === 'honden' ? 130 : 0) + (tactic === 'rush' ? 90 : 0);
+  }
+  const before = evalState(g, team);
+  const gc = clone(g);
+  let r;
+  if (action.kind === 'maebaMove') r = RULES.maebaMove(gc, action.sid);
+  else r = RULES.useWeapon(gc, action.sid, action.targetSid || null);
+  if (!r || !r.ok) return -1e18;
+  let sc = evalState(gc, team) - before;
+  if (gc.phase === 'over' && gc.winner === team) sc += 1e7;
+  if (action.targetSid) sc += pieceValue(RULES.getS(g, action.targetSid)) * (action.wp === 'hardgel' ? 0.22 : 0.08);
+  if (action.wp === 'fuhou') {
+    sc += g.soldiers.filter(v => v.alive && v.team === foe && SQ[v.pos].kind === 'T').length * 280;
+  }
+  if (action.wp === 'comic') {
+    const fl = floorOfPos(s.pos);
+    const victims = g.soldiers.filter(v => v.alive && v.role === 'soldier' && floorOfPos(v.pos) === fl);
+    victims.forEach(v => { sc += (v.team === team ? -pieceValue(v) : pieceValue(v)) * 0.35; });
+  }
+  return sc;
+}
+function useTacticalWeapons(g, team, mem, opts) {
+  if (!g || g.phase !== 'play' || g.activeTeam !== team) return [];
+  opts = opts || {};
+  const used = [];
+  const tactic = opts.tactic || 'balanced';
+  const maxActions = opts.maxActions || 2;
+  for (let i = 0; i < maxActions && g.phase === 'play'; i++) {
+    const cands = weaponActionCandidates(g, team, tactic);
+    let best = null, bestScore = -1e18;
+    for (const a of cands) {
+      const sc = scoreWeaponAction(g, a, team, tactic);
+      if (sc > bestScore) { bestScore = sc; best = a; }
+    }
+    if (!best || bestScore < weaponThreshold(tactic, opts.afterMove)) break;
+    const r = best.kind === 'maebaMove' ? RULES.maebaMove(g, best.sid) : RULES.useWeapon(g, best.sid, best.targetSid || null);
+    if (!r || !r.ok) break;
+    used.push({ wp: best.wp, sid: best.sid, targetSid: best.targetSid || null, score: bestScore });
+    updateMemory(g, team, mem || {});
+  }
+  return used;
+}
+
+// ---------- candidate parameter sets ----------
+const TACTIC_PARAMS = {
+  rush: [{ nAttack: 6, nGuard: 1, rest: 'attack', advance: 8 }, { nAttack: 7, nGuard: 0, rest: 'attack', advance: 9 }],
+  guard: [{ nAttack: 1, nGuard: 4, rest: 'hold', advance: 5 }, { nAttack: 0, nGuard: 5, rest: 'hold', advance: 4 }],
+  stealth: [{ nAttack: 2, nGuard: 2, rest: 'hold', advance: 5 }, { nAttack: 3, nGuard: 2, rest: 'guard', advance: 5 }],
+  annihilate: [{ nAttack: 5, nGuard: 2, rest: 'attack', advance: 6 }, { nAttack: 4, nGuard: 3, rest: 'guard', advance: 6 }],
+  honden: [{ nAttack: 7, nGuard: 0, rest: 'attack', advance: 10 }, { nAttack: 6, nGuard: 1, rest: 'attack', advance: 9 }]
+};
+function candidateParams(g, team, tactic) {
+  const out = [];
+  if (tactic && TACTIC_PARAMS[tactic]) TACTIC_PARAMS[tactic].forEach(p => out.push(p));
   for (const nAttack of [2, 3, 4, 5]) {
     for (const nGuard of [2, 3]) {
       out.push({ nAttack, nGuard, rest: 'guard', advance: 6 });
@@ -4457,11 +4585,17 @@ function beliefBoard(g, team, mem) {
 // ---------- top-level agent ----------
 function makeSmartAgent(opts) {
   const depth = (opts && opts.depth) || 1;
-  return function act(g, team, mem) {
+  const fixedTactic = opts && opts.tactic;
+  return function act(g, team, mem, runOpts) {
+    mem = mem || {};
+    const tactic = (runOpts && runOpts.tactic) || fixedTactic || null;
+    updateMemory(g, team, mem);
+    useTacticalWeapons(g, team, mem, { tactic: tactic, maxActions: 2 });
+    if (g.phase !== 'play') return;
     updateMemory(g, team, mem);
     const gb = beliefBoard(g, team, mem);
     const threat = threatSet(gb, team);
-    const cands = candidateParams(gb, team);
+    const cands = candidateParams(gb, team, tactic);
     let bestPlan = null, bestScore = -1e18;
     for (const p of cands) {
       const gc = clone(gb);
@@ -4483,6 +4617,7 @@ function makeSmartAgent(opts) {
         }
       }
     }
+    if (g.phase === 'play') useTacticalWeapons(g, team, mem, { tactic: tactic, maxActions: 1, afterMove: true });
   };
 }
 
@@ -4501,18 +4636,39 @@ function execPlan(g, plan) {
   }
 }
 function weakAct(g, team, mem) {
+  mem = mem || {};
   updateMemory(g, team, mem);
+  useTacticalWeapons(g, team, mem, { tactic: 'rush', maxActions: 1 });
+  if (g.phase !== 'play') return;
   const gb = beliefBoard(g, team, mem);
   const plan = runPolicy(clone(gb), team, { nAttack: 4, nGuard: 2, rest: 'guard', advance: 8 }, null);
   execPlan(g, plan);
 }
 const _agents = {};
-window.SMART = {
-  act: function (g, team, mem, level) {
-    if (level === 'weak') return weakAct(g, team, mem);
+function smartAct(g, team, mem, level, opts) {
+    opts = opts || {};
+    if (level === 'weak') return weakAct(g, team, mem, opts);
     const depth = (level === 'max') ? 2 : 1;
-    if (!_agents[depth]) _agents[depth] = makeSmartAgent({ depth: depth });
-    return _agents[depth](g, team, mem);
+    const key = depth + ':' + (opts.tactic || 'balanced');
+    if (!_agents[key]) _agents[key] = makeSmartAgent({ depth: depth, tactic: opts.tactic || null });
+    return _agents[key](g, team, mem, opts);
+}
+window.JINPO_SMART = {
+  act: smartAct,
+  makeSmartAgent,
+  weakAct,
+  runPolicy,
+  candidateParams,
+  TACTIC_PARAMS,
+  useTacticalWeapons,
+  evalState,
+  updateMemory,
+  beliefBoard,
+  clone
+};
+window.SMART = {
+  act: function (g, team, mem, level, opts) {
+    return smartAct(g, team, mem, level, opts);
   }
 };
 })();
