@@ -289,44 +289,6 @@ body.gameScreen #hint{bottom:calc(58px + env(safe-area-inset-bottom))}
   <button id="btnGoCreate" data-act="go-create" class="primary big">🏠 部屋を作る（オンライン対戦）</button>
   <button id="btnGoJoin" data-act="go-join" class="big">🔑 部屋コードで参加</button>
   <button data-act="go-cpu" class="big">🤖 AIと対戦（ひとりで遊ぶ）</button>
-  <button data-act="go-local" class="big">🧪 この端末1台で対戦・検証</button>
-  <div id="storNote" class="disp"></div>
-
-  <details>
-    <summary>オンライン対戦のはじめ方</summary>
-    <ol>
-      <li>2人がそれぞれ<b>自分の端末でこのページを開く</b>。同じ場所にいる必要はありません。スマホ・PCどちらでも、別々の回線でも大丈夫です。</li>
-      <li>1人が「部屋を作る」→ <b>4文字のコード</b>が表示されます。</li>
-      <li>そのコードを相手に伝え、相手は「部屋コードで参加」で入力。<b>リンクの共有は不要</b>です。</li>
-      <li>それぞれ自陣に8人を配置して「準備完了」→ 自動で対戦開始。以後は相手が駒を動かした瞬間に画面へ反映されます。</li>
-      <li>通信が切れたりページを再読み込みした場合は、「部屋コードで参加」→「中断した対戦に戻る…」→ 同じコードと自分のチームを選べば、途中から復帰できます。</li>
-    </ol>
-  </details>
-
-  <details>
-    <summary>ルール早見表</summary>
-    <ul>
-      <li>交互にターン。1ターンで<b>自軍の全員</b>を動かせる（1マスずつタップ）。基本4歩、📣メガホンは6歩。動かなくても・戻ってもよい。</li>
-      <li>斜め移動は不可（経路上で曲がるのは自由）。<b>味方のいるマスには入れない</b>。</li>
-      <li>敵のいるマスに踏み込むと撃破。<b>止まらずそのまま進める</b>ので、1回の移動で複数撃破できる。</li>
-      <li><b>潜伏所T（緑丸）</b>：入るのに1歩、入ったターンは出られない。<b>出る時は2歩ぶんの移動力を消費</b>（残り1歩では出られない）。1部屋1人。中は誰からも見えない。敵が踏み込むと中の兵は撃破される。</li>
-      <li><b>廊下の視界</b>：廊下は<b>自分の駒がその廊下に立っている間だけ</b>全体が見える。<b>自陣の廊下でも、誰もいなければ見えない</b>。真ん中の壁には<b>暗幕</b>が垂れており、誰かが壁を越えて暗幕が破れると、以後その階では廊下に立てば<b>反対側の廊下まで見通せる</b>（1階・2階で独立）。</li>
-      <li><b>階段（横一列の帯）</b>：入口2マス（A3/A4・C3/C4・B27/B28・D27/D28）にいる間だけ、踊り場（＝本殿）までの手前半分が見える（相互）。敵も階段に入れる。</li>
-      <li><b>X/Y部屋</b>：ふすま越しには中が見えない。自分の駒が中にいる間だけ部屋全体が見える。<b>出る時は2歩ぶんの移動力を消費</b>。X⇄Yは直接行き来できず、奥は行き止まり。</li>
-      <li><b>勝利</b>：①敵の🚩旗持ちを撃破　②敵の本殿（P5/P6・Q5/Q6）に到達（通過でも可）　③敵の全滅。15ラウンド満了時は「生存数 → 敵陣内の生存数 → <b>引き分け</b>」の順で判定。</li>
-      <li>画面には「<b>目で見えるもの</b>」だけが描かれます。推理で分かる情報（どのTに入ったか等）は各自で追ってください。</li>
-    </ul>
-  </details>
-
-  <details>
-    <summary>注意事項（正直な話）</summary>
-    <ul>
-      <li>通信には<b>誰でも使える公開のメッセージ中継サーバー（MQTT）</b>を利用しています。専用サーバーの用意やアカウント登録は不要ですが、その分<b>通信内容は暗号化されておらず、部屋コードを知る第三者は内容を見られます</b>。相手の配置が見えないのは画面上の処理にすぎません。<b>信頼できる相手との対戦用</b>とお考えください。</li>
-      <li>中継サーバーは無保証の公開サービスのため、混雑・停止することがあります。接続できない時は少し待つか、部屋を作り直してください（複数のサーバーを自動で切り替えます）。</li>
-      <li>30秒タイマーは目安表示で、自動でターン終了はしません。</li>
-      <li>離席・切断すると相手の画面に「相手の接続が切れています」と表示されます。同じコードで再接続すれば続きから遊べます。</li>
-    </ul>
-  </details>
 </section>
 
 <section id="scrCreate" class="screen hidden">
@@ -995,6 +957,7 @@ const RULES = (function() {
             g.zutaiDown[foe.team] = true;
             g.log.push('💥 ' + foe.name + ' 戦死。以後ゲーム終了まで' + JPN[foe.team] + '全員の行動マス -2');
         }
+        if (foe.role === 'flag') return true;
         if (!noRevive) {
             const ph = g.soldiers.filter(function(o) { return o.alive && o.team === foe.team && o.wp === 'phoenix'; })[0];
             if (ph && !g.used[foe.team].phoenix) {
@@ -1039,7 +1002,11 @@ const RULES = (function() {
     }
     function checkWins(g, s, to, kills) {
         if (g.phase !== 'play') return;
-        if (kills.some(function(k) { return k.role === 'flag'; })) { gwin(g, s.team, '敵の🚩旗持ちを撃破'); return; }
+        if (kills.some(function(k) { return k.role === 'flag'; }) ||
+            g.soldiers.some(function(o) { return !o.alive && o.team === OTHER[s.team] && o.role === 'flag'; })) {
+            gwin(g, s.team, '敵の🚩旗持ちを撃破');
+            return;
+        }
         const q = to ? SQ[to] : null;
         if (q && q.kind === 'honden' && q.team !== s.team) { gwin(g, s.team, plbl(s) + ' が敵の本殿 ' + to + ' に到達'); return; }
         if (kills.length && aliveCount(g, OTHER[s.team]) === 0) gwin(g, s.team, '敵チームを全滅させた');
@@ -3828,16 +3795,10 @@ if (typeof module !== 'undefined' && module.exports) {
     }
 
     function renderHome() {
-        var note = $('storNote');
-        if (HAS_NET) {
-            note.innerHTML = 'オンライン対戦: <b class="ok">利用可能</b>　インターネット経由で、離れた相手とリアルタイムに対戦できます。';
-        } else {
-            note.innerHTML = 'オンライン対戦: <b class="ng">初期化できませんでした</b>　ページを再読み込みしてください。「1台で対戦・検証」は利用できます。';
-        }
         var c = $('btnGoCreate'),
             j = $('btnGoJoin');
-        c.disabled = !HAS_NET;
-        j.disabled = !HAS_NET;
+        if (c) c.disabled = !HAS_NET;
+        if (j) j.disabled = !HAS_NET;
     }
 
     function renderCreate() {
