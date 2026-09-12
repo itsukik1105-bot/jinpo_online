@@ -631,6 +631,31 @@ const FUSUMA = [
 FUSUMA.forEach(function(p) {
     link(p[0], p[1]);
 });
+const BROKEN_WALL_LINKS = [
+    ['X31', 'Y1'],
+    ['X32', 'Y2'],
+    ['X33', 'Y3'],
+    ['X34', 'Y4'],
+    ['X35', 'Y5'],
+    ['X36', 'Y6']
+];
+const BROKEN_WALL_EXTRA = {};
+BROKEN_WALL_LINKS.forEach(function(p) {
+    (BROKEN_WALL_EXTRA[p[0]] || (BROKEN_WALL_EXTRA[p[0]] = [])).push(p[1]);
+    (BROKEN_WALL_EXTRA[p[1]] || (BROKEN_WALL_EXTRA[p[1]] = [])).push(p[0]);
+});
+function kusanagiWallsBroken(g) {
+    return !!(g && g.soldiers && g.soldiers.some(function(s) { return s.alive && s.wp === 'kusanagi'; }));
+}
+function adjacentSquares(g, id) {
+    const base = ADJ[id] ? ADJ[id].slice() : [];
+    if (kusanagiWallsBroken(g) && BROKEN_WALL_EXTRA[id]) {
+        BROKEN_WALL_EXTRA[id].forEach(function(nb) {
+            if (base.indexOf(nb) < 0) base.push(nb);
+        });
+    }
+    return base;
+}
 const STAIR_LINKS = [
     ['A3', 'P1'],
     ['A4', 'P1'],
@@ -650,6 +675,7 @@ if (typeof module !== 'undefined' && module.exports) {
         ADJ: ADJ,
         TDEF: TDEF,
         FUSUMA: FUSUMA,
+        BROKEN_WALL_LINKS: BROKEN_WALL_LINKS,
         STAIR_LINKS: STAIR_LINKS
     };
 }
@@ -738,13 +764,13 @@ const WEAPONS = [
     { id: 'gakureki',  name: '西尾の学歴コンプ',           team: 'B',                 kind: 'active',   once: true,
       desc: '発動した次の相手ターン、石井・内藤・小野寺・川名以外は行動できなくなる。' },
     { id: 'comic',     name: '金澤&ノノカのコミックパワー',team: 'C',                 kind: 'active',   once: true,
-      desc: 'この駒と同じ通りにいる全員を敵味方問わず撃破。潜伏中も対象。旗持ち・メガホンは対象外。' },
+      desc: '前ターンに宣言が必要。次の自分のターン、この駒と同じ通りにいる全員を敵味方問わず撃破。潜伏中も対象。旗持ち・メガホンは対象外。' },
     { id: 'charisma',  name: '山下の自称カリスマ',         team: 'A',                 kind: 'passive',
       desc: '味方全員の行動マス+1、敵全員の行動マス-1。' },
     { id: 'chinbo',    name: '吉岡の珍棒',                 team: 'B',                 kind: 'passive',
       desc: '移動時、通過した各マスの周囲1マスにも攻撃が及ぶ。' },
     { id: 'kusanagi',  name: '草薙剣',                     team: 'C',                 kind: 'passive',
-      desc: '通過したマスに隣接する潜伏所の中身を、マスを消費せず開示する。' }
+      desc: 'この装備が存在する限り全ての壁が破壊される。この駒の行動マス+1。' }
 ];
 const WP = {};
 WEAPONS.forEach(function(w) { WP[w.id] = w; });
@@ -907,7 +933,7 @@ const RULES = (function() {
                     sid: pre + n, team: team, role: p.role, num: n, pos: p.pos,
                     alive: true, steps: 0, locked: false,
                     name: m.name, year: m.year, sex: m.sex, wp: p.wp || null,
-                    stun: false
+                    stun: false, comicDeclared: false, comicReady: false
                 });
             });
         }
@@ -953,6 +979,7 @@ const RULES = (function() {
     function stepsFor(g, s) {
         let v = baseSteps(g, s);
         if (s.wp === 'moonwalk') v += 2;
+        if (s.wp === 'kusanagi') v += 1;
         g.soldiers.forEach(function(o) {
             if (!o.alive) return;
             const ally = (o.team === s.team);
@@ -972,6 +999,8 @@ const RULES = (function() {
             if (s.team !== team || !s.alive) return;
             s.steps = stepsFor(g, s);
             s.locked = false;
+            s.comicReady = !!s.comicDeclared;
+            s.comicDeclared = false;
             if (s.stun) { s.stun = false; s.steps = 0; }
             if (locked && GAKUREKI_FREE.indexOf(s.name) < 0) s.steps = 0;
         });
@@ -1020,27 +1049,17 @@ const RULES = (function() {
     function kusaiBlocked(g, s, to) {
         if (s.role === 'mega') return false;
         return g.soldiers.some(function(o) {
-            return o.alive && o.team !== s.team && o.wp === 'kusaidama' && ADJ[to] && ADJ[to].indexOf(o.pos) >= 0;
+            return o.alive && o.team !== s.team && o.wp === 'kusaidama' && adjacentSquares(g, to).indexOf(o.pos) >= 0;
         });
     }
     /* 【吉岡の珍棒】: 移動先の周囲1マスにも攻撃が及ぶ（囲われた潜伏所・大部屋は対象外） */
     function splashAttack(g, s, kills) {
         if (s.wp !== 'chinbo' || !s.alive) return;
-        ADJ[s.pos].forEach(function(nb) {
+        adjacentSquares(g, s.pos).forEach(function(nb) {
             const k = SQ[nb].kind;
             if (k === 'T' || k === 'room') return;
             const foe = enemyAt(g, nb, s.team);
             if (foe && killPiece(g, foe, '⚔ 吉岡の珍棒の間合い！ ' + plbl(foe) + ' が ' + nb + ' で撃破された')) kills.push(foe);
-        });
-    }
-    /* 【草薙剣】: 通過したマスに隣接する潜伏所の扉を破壊し、中身を開示する */
-    function kusanagiReveal(g, s) {
-        if (s.wp !== 'kusanagi' || !s.alive) return;
-        ADJ[s.pos].forEach(function(nb) {
-            if (SQ[nb].kind !== 'T' || g.revealT[s.team].indexOf(nb) >= 0) return;
-            g.revealT[s.team].push(nb);
-            const occ = soldierAt(g, nb);
-            g.log.push('🗡 草薙剣が ' + nb + ' の扉を破壊 → ' + (occ ? plbl(occ) + ' が潜伏していた' : '無人'));
         });
     }
     function checkWins(g, s, to, kills) {
@@ -1063,7 +1082,7 @@ const RULES = (function() {
         if (s.team !== g.activeTeam) return { ok: false, err: '相手のターンです' };
         if (s.locked) return { ok: false, err: '潜伏所に入ったターンは動けません' };
         if (s.steps <= 0) return { ok: false, err: 'この駒の移動力は使い切りました' };
-        if (ADJ[s.pos].indexOf(to) < 0) return { ok: false, err: '隣のマスにしか進めません' };
+        if (adjacentSquares(g, s.pos).indexOf(to) < 0) return { ok: false, err: '隣のマスにしか進めません' };
         if (allyAt(g, to, s.team)) return { ok: false, err: '味方がいるマスへは進めません' };
         if (kusaiBlocked(g, s, to)) return { ok: false, err: '門間の臭い玉が臭くて近づけません' };
         const qFrom = SQ[s.pos];
@@ -1084,7 +1103,6 @@ const RULES = (function() {
             g.log.push('🔶 ' + q.floor + '階の暗幕が破られた！ 以後この階では、廊下に立てば反対側の廊下まで見通せます');
         }
         splashAttack(g, s, kills);
-        kusanagiReveal(g, s);
         checkWins(g, s, to, kills);
         trimLog(g);
         return { ok: true, captured: kills.length ? kills[0].sid : null };
@@ -1210,16 +1228,25 @@ const RULES = (function() {
             trimLog(g); return { ok: true };
         }
         if (w.id === 'comic') {
+            if (!s.comicReady) {
+                if (s.comicDeclared) return { ok: false, err: 'コミックパワーはこのターンすでに宣言しています' };
+                if (!floorOfPos(s.pos)) return { ok: false, err: '通り（廊下・潜伏所・大部屋）にいる時だけ宣言できます' };
+                s.comicDeclared = true;
+                g.log.push('💣 金澤&ノノカのコミックパワーを宣言！ ' + plbl(s) + ' は次の自分のターンに爆発させられる');
+                trimLog(g); return { ok: true, declared: true };
+            }
             const fl = floorOfPos(s.pos);
             if (!fl) return { ok: false, err: '通り（廊下・潜伏所・大部屋）にいる時だけ使えます' };
             g.used[s.team].comic = true;
+            s.comicReady = false;
+            s.comicDeclared = false;
             g.log.push('💣 金澤&ノノカのコミックパワー！ ' + fl + '階の通りが吹き飛んだ');
             const victims = g.soldiers.filter(function(o) { return o.alive && o.role === 'soldier' && floorOfPos(o.pos) === fl; });
             victims.forEach(function(o) {
                 if (killPiece(g, o, '　→ ' + plbl(o) + ' が ' + o.pos + ' で巻き込まれ撃破された', true) && o.team === foe) kills.push(o);
             });
             checkWins(g, s, null, kills);
-            trimLog(g); return { ok: true };
+            trimLog(g); return { ok: true, activated: true };
         }
         if (w.id === 'maeba') {
             return maebaMove(g, sid, targetSid);
@@ -1253,7 +1280,6 @@ const RULES = (function() {
         s.steps = 0;
         g.log.push('🦷 ' + plbl(s) + ' が人造前歯で ' + moved + 'マス突進して ' + s.pos + ' へ（残り' + Math.max(0, 2 - weaponUsedCount(g, s.team, 'maeba')) + '回）');
         splashAttack(g, s, kills);
-        kusanagiReveal(g, s);
         checkWins(g, s, s.pos, kills);
         trimLog(g);
         return { ok: true };
@@ -1306,9 +1332,10 @@ const RULES = (function() {
     /* 視認できるマス集合 */
     function visibleSquares(g, team) {
         const vis = new Set();
+        const wallsBroken = kusanagiWallsBroken(g);
         /* ▼ 廊下の視界: 自分の駒が立っている廊下だけ見える（自陣でも無人なら見えない）。
            A-B / C-D はひと続きの廊下だが、間の壁に暗幕が垂れている。
-           暗幕が破れた後（g.crossed）は、その階の廊下に立てば反対側の廊下まで見通せる */
+           暗幕が破れた後（g.crossed）または草薙剣が存在する間は、反対側の廊下まで見通せる */
         const CORR_PARTNER = { A: 'B', B: 'A', C: 'D', D: 'C' };
         const CORR_FLOOR = { A: 1, B: 1, C: 2, D: 2 };
         const myCorr = {};
@@ -1321,7 +1348,7 @@ const RULES = (function() {
             if (q.kind !== 'corridor') continue;
             const c = q.corridor;
             if (myCorr[c]) vis.add(q.id);
-            else if (g.crossed[CORR_FLOOR[c]] && myCorr[CORR_PARTNER[c]]) vis.add(q.id);
+            else if ((wallsBroken || g.crossed[CORR_FLOOR[c]]) && myCorr[CORR_PARTNER[c]]) vis.add(q.id);
         }
         const mine = g.soldiers.filter(s => s.alive && s.team === team);
         const at = id => mine.some(s => s.pos === id);
@@ -1356,10 +1383,15 @@ const RULES = (function() {
             if (mine.some(s => SQ[s.pos].room === R)) {
                 for (const q of Object.values(SQ))
                     if (q.room === R) vis.add(q.id);
+                if (wallsBroken) {
+                    const otherRoom = R === 'X' ? 'Y' : 'X';
+                    for (const q of Object.values(SQ))
+                        if (q.room === otherRoom) vis.add(q.id);
+                }
             }
         });
         mine.forEach(s => vis.add(s.pos));
-        /* 【草薙剣】で扉を破壊した潜伏所は以後ずっと見える */
+        /* 旧セーブ互換: 以前の草薙剣で扉を破壊した潜伏所 */
         ((g.revealT && g.revealT[team]) || []).forEach(function(id) { vis.add(id); });
         return vis;
     }
@@ -1389,6 +1421,8 @@ const RULES = (function() {
         roleGlyph,
         slotLabel,
         stepsFor,
+        adjacentSquares,
+        kusanagiWallsBroken,
         useWeapon,
         maebaMove,
         maebaTargets,
@@ -3197,6 +3231,7 @@ if (typeof module !== 'undefined' && module.exports) {
         var w = WP[s.wp];
         if (!w || w.kind !== 'active') return null;
         if (weaponSpent(APP.g, s.team, w)) return null;
+        if (w.id === 'comic' && s.comicDeclared && !s.comicReady) return null;
         return w;
     }
     /* 対象指定が要る装備品 */
@@ -3683,17 +3718,18 @@ if (typeof module !== 'undefined' && module.exports) {
             1: false,
             2: false
         };
+        var wallsBroken = g && RULES.kusanagiWallsBroken(g);
         [
             [136, 1],
             [656, 2]
         ].forEach(function(wm) {
             var x = wm[0],
                 fl = wm[1],
-                cr = crossed[fl];
+                cr = wallsBroken || crossed[fl];
             out += '<rect x="' + x + '" y="697" width="90" height="10" rx="3" fill="' + COL.wall + '" opacity="' + (cr ? 0.28 : 1) + '"/>';
-            out += '<text x="' + (x - 6) + '" y="706" text-anchor="end" font-size="10" fill="' + (cr ? COL.wall : '#8a929c') + '">' + (cr ? '暗幕破れ' : '暗幕') + '</text>';
+            out += '<text x="' + (x - 6) + '" y="706" text-anchor="end" font-size="10" fill="' + (cr ? COL.wall : '#8a929c') + '">' + (cr ? (wallsBroken ? '草薙破壊' : '暗幕破れ') : '暗幕') + '</text>';
         });
-        out += '<rect x="248" y="944" width="244" height="8" fill="' + COL.greenWall + '"/>';
+        out += '<rect x="248" y="944" width="244" height="8" fill="' + COL.greenWall + '" opacity="' + (wallsBroken ? '0.24' : '1') + '"/>';
         /* キャプション */
         out += cap(140, 94, 'A廊下（1階・青）');
         out += cap(660, 94, 'C廊下（2階・青）');
@@ -3703,7 +3739,7 @@ if (typeof module !== 'undefined' && module.exports) {
         out += cap(226, 1300, '赤の階段：B27・B28 ⇄ Q1…Q4 ⇄ 本殿(Q5・Q6) ⇄ Q7…Q10 ⇄ D27・D28', '#c89a94');
         out += '<text x="498" y="830" font-size="11" fill="#9aa3ad">← X部屋（6×6）</text>';
         out += '<text x="498" y="1072" font-size="11" fill="#9aa3ad">← Y部屋（6×6）</text>';
-        out += '<text x="498" y="954" font-size="10" fill="#7fc27a">X/Y間は壁（不通）</text>';
+        out += '<text x="498" y="954" font-size="10" fill="#7fc27a">' + (wallsBroken ? 'X/Y間の壁は草薙剣で破壊' : 'X/Y間は壁（不通）') + '</text>';
         /* 配置中：自陣以外を薄暗く */
         if (!g && APP.mode) {
             var pt = placingTeam();
@@ -3765,7 +3801,7 @@ if (typeof module !== 'undefined' && module.exports) {
                         out += '<rect data-step="' + to + '" x="' + (q.x + 1.5) + '" y="' + (q.y + 1.5) + '" width="' + (q.w - 3) + '" height="' + (q.h - 3) + '" fill="' + fill + '" stroke="' + hi + '" stroke-width="3"/>';
                     });
                 } else if (sel.steps > 0 && !sel.locked) {
-                    ADJ[sel.pos].forEach(function(to) {
+                    RULES.adjacentSquares(g, sel.pos).forEach(function(to) {
                         if (RULES.allyAt(g, to, sel.team)) return;
                         var q = SQ[to];
                         if (q.kind === 'T') out += '<circle data-step="' + to + '" cx="' + (q.x + 20) + '" cy="' + (q.y + 20) + '" r="17" fill="' + fill + '" stroke="' + hi + '" stroke-width="3"/>';
@@ -3868,8 +3904,9 @@ if (typeof module !== 'undefined' && module.exports) {
         }
         if (s) {
             var wtxt = s.wp ? '　<span class="tag">' + esc(RULES.wpFull(s.wp)) + '</span>' : '';
+            var comicTxt = s.comicReady ? '　<span class="tag">コミック発動可</span>' : (s.comicDeclared ? '　<span class="tag">コミック宣言済み</span>' : '');
             el.innerHTML = '選択中: <b>' + esc(RULES.plbl(s)) + '</b>（' + s.year + '／' + sexJP(s.sex) + '）' +
-                esc(s.pos) + '　残り<b>' + s.steps + '</b>歩' + wtxt +
+                esc(s.pos) + '　残り<b>' + s.steps + '</b>歩' + wtxt + comicTxt +
                 (s.locked ? '　<span class="mut">※潜伏所に入ったので今ターンは終了</span>' : '') +
                 (s.wp && WP[s.wp] ? '<div class="small mut">' + esc(WP[s.wp].desc) + '</div>' : '');
         }
@@ -3923,7 +3960,10 @@ if (typeof module !== 'undefined' && module.exports) {
                 if (aw) {
                     var lim = weaponUseLimit(aw);
                     var left = lim ? Math.max(0, lim - weaponUsedCount(g, sel.team, aw.id)) : null;
-                    h += btn(aw.id === 'maeba' ? 'maeba' : 'usewp', '⚡ ' + aw.name + (left !== null ? ' 残' + left : ''), 'warn');
+                    var label = '⚡ ' + aw.name;
+                    if (aw.id === 'comic') label += sel.comicReady ? ' 発動' : ' 宣言';
+                    if (left !== null) label += ' 残' + left;
+                    h += btn(aw.id === 'maeba' ? 'maeba' : 'usewp', label, 'warn');
                 }
             }
             h += btn('log-open', 'ログ', '');
@@ -4378,7 +4418,7 @@ function reach(g, s) {
       if (SQ[cur].kind === 'T' && cur !== start) continue;
       const info = res[cur];
       const qc = SQ[cur];
-      for (const nb of ADJ[cur]) {
+      for (const nb of RULES.adjacentSquares(g, cur)) {
         const qn = SQ[nb];
         /* 新ルール: 部屋・潜伏所からの退出は2歩ぶん消費、入室ターンの退出は不可 */
         const leaving = (qc.kind === 'T' && qn.kind !== 'T') || (!!qc.room && qc.room !== qn.room);
@@ -4552,6 +4592,7 @@ function pieceValue(s) {
   let v = s.role === 'flag' ? 9000 : (s.role === 'mega' ? 1700 : 1000);
   if (s.wp === 'zutai') v += 1600;
   else if (s.wp === 'charisma') v += 900;
+  else if (s.wp === 'kusanagi') v += 760;
   else if (s.wp === 'kusaidama' || s.wp === 'phoenix') v += 650;
   else if (s.wp) v += 260;
   return v;
@@ -4593,7 +4634,7 @@ function weaponActionCandidates(g, team, tactic) {
     } else if (w.id === 'gakureki') {
       if (lockableByGakureki(g, team) > 0) out.push({ kind: 'use', sid: s.sid, wp: w.id });
     } else if (w.id === 'comic') {
-      if (floorOfPos(s.pos)) out.push({ kind: 'use', sid: s.sid, wp: w.id });
+      if (floorOfPos(s.pos) && (s.comicReady || !s.comicDeclared)) out.push({ kind: 'use', sid: s.sid, wp: w.id, declaring: !s.comicReady });
     } else if (w.id === 'funnel') {
       if (aliveList(g, foe).length) out.push({ kind: 'use', sid: s.sid, wp: w.id });
     } else if (w.id === 'maeba') {
@@ -4616,6 +4657,13 @@ function scoreWeaponAction(g, action, team, tactic) {
   }
   if (action.wp === 'gakureki') {
     return lockableByGakureki(g, team) * 420 + (tactic === 'guard' ? 140 : 0);
+  }
+  if (action.wp === 'comic' && action.declaring) {
+    const fl = floorOfPos(s.pos);
+    const victims = g.soldiers.filter(v => v.alive && v.role === 'soldier' && floorOfPos(v.pos) === fl);
+    let swing = 0;
+    victims.forEach(v => { swing += (v.team === team ? -pieceValue(v) : pieceValue(v)) * 0.22; });
+    return swing + (tactic === 'annihilate' ? 180 : 0) + (tactic === 'stealth' ? 70 : 0);
   }
   const before = evalState(g, team);
   const gc = clone(g);

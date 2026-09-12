@@ -98,9 +98,9 @@ function loadEngine(rand) {
   const core = main.slice(coreStart, coreEnd);
   const expose = `
 window.__JINPO_CORE__ = {
-  SQ, ADJ, ROSTER, SQUADS, WEAPONS, WP, GAKUREKI_FREE,
+  SQ, ADJ, BROKEN_WALL_LINKS, ROSTER, SQUADS, WEAPONS, WP, GAKUREKI_FREE,
   rosterOf, memberOf, fixedOf, freeRoster, weaponsFor,
-  RULES, OTHER, JPN, floorOfPos, corrIndex, forwardSign
+  RULES, OTHER, JPN, floorOfPos, corrIndex, forwardSign, adjacentSquares, kusanagiWallsBroken
 };`;
 
   const context = {
@@ -129,13 +129,14 @@ function instrumentRules(RULES) {
     if (r && r.ok && team && wp) {
       g.simEvents = g.simEvents || [];
       g.simEvents.push({
-        type: 'weapon',
+        type: r.declared ? 'weapon_declare' : 'weapon',
         wp,
         sid,
         name,
         team,
         targetSid: targetSid || null,
         direction: direction || null,
+        stage: r.declared ? 'declare' : (r.activated ? 'activate' : null),
         turn: g.turn,
         round: Math.ceil(g.turn / 2)
       });
@@ -182,11 +183,11 @@ function pick(a, rand) {
 
 function weaponWeight(id, tactic) {
   const table = {
-    rush: { moonwalk: 7, charisma: 6, maeba: 6, daichari: 4, zutai: 4, sennichi: 3, funnel: 3 },
-    guard: { kusaidama: 7, phoenix: 6, gakureki: 6, hardgel: 5, zutai: 5, charisma: 4, virgin: 3 },
-    stealth: { fuhou: 7, kusanagi: 6, comic: 5, virgin: 5, onnabancho: 3, gakureki: 3 },
-    annihilate: { comic: 8, chinbo: 7, funnel: 6, hardgel: 5, daichari: 5, charisma: 4 },
-    honden: { moonwalk: 8, charisma: 7, maeba: 7, zutai: 4, sennichi: 4, daichari: 3 }
+    rush: { moonwalk: 7, charisma: 6, maeba: 6, kusanagi: 6, daichari: 4, zutai: 4, sennichi: 3, funnel: 3 },
+    guard: { kusaidama: 7, phoenix: 6, gakureki: 6, hardgel: 5, zutai: 5, kusanagi: 5, charisma: 4, virgin: 3 },
+    stealth: { fuhou: 7, kusanagi: 7, comic: 5, virgin: 5, onnabancho: 3, gakureki: 3 },
+    annihilate: { comic: 8, chinbo: 7, funnel: 6, kusanagi: 6, hardgel: 5, daichari: 5, charisma: 4 },
+    honden: { moonwalk: 8, charisma: 7, maeba: 7, kusanagi: 6, zutai: 4, sennichi: 4, daichari: 3 }
   };
   return ((table[tactic] && table[tactic][id]) || 1);
 }
@@ -356,7 +357,7 @@ function playGame(engine, opts, config, gameIndex, rand) {
     redAlive: RULES.aliveCount(g, 'red'),
     blueWeapons: equippedWeapons(bluePlace),
     redWeapons: equippedWeapons(redPlace),
-    usedWeapons: (g.simEvents || []).map(e => `${e.team}:${e.wp}${e.direction ? ':' + e.direction : ''}@${e.turn}`).join('|'),
+    usedWeapons: (g.simEvents || []).map(e => `${e.team}:${e.wp}${e.stage ? ':' + e.stage : ''}${e.direction ? ':' + e.direction : ''}@${e.turn}`).join('|'),
     events: g.simEvents || []
   };
 }
@@ -439,6 +440,7 @@ function summarize(results) {
       addPerspective(loadouts, loadKey, won, draw);
     }
     for (const ev of r.events) {
+      if (ev.type === 'weapon_declare') continue;
       const side = ev.team;
       const team = r[`${side}Team`];
       const won = r.winnerSide === side;
