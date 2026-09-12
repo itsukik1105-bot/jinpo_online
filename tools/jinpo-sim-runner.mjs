@@ -143,11 +143,11 @@ function instrumentRules(RULES) {
     return r;
   };
   const origMaeba = RULES.maebaMove;
-  RULES.maebaMove = function maebaMoveWithEvent(g, sid) {
+  RULES.maebaMove = function maebaMoveWithEvent(g, sid, to) {
     const s = RULES.getS(g, sid);
     const team = s && s.team;
     const name = s && s.name;
-    const r = origMaeba(g, sid);
+    const r = origMaeba(g, sid, to);
     if (r && r.ok && team) {
       g.simEvents = g.simEvents || [];
       g.simEvents.push({
@@ -157,6 +157,7 @@ function instrumentRules(RULES) {
         name,
         team,
         targetSid: null,
+        targetPos: to || null,
         turn: g.turn,
         round: Math.ceil(g.turn / 2)
       });

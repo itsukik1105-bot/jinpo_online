@@ -717,8 +717,8 @@ const WEAPONS = [
       desc: '見えている敵のオールバックでない駒（＝女）1人を、1ターン行動不能にする。' },
     { id: 'fuhou',     name: '村上の不法滞在',             team: 'A', kind: 'active',   once: true,
       desc: '潜伏所にいる敵を全員、隣の通路へ強制的に追い出す。1ゲームに1回のみ。' },
-    { id: 'maeba',     name: '平井の人造前歯',             team: 'C', kind: 'active',   declare: true,
-      desc: '前のターンに宣言が必要。次の自分のターン、敵陣方向へ縦に何マスでも直進できる。何度でも使える。' },
+    { id: 'maeba',     name: '平井の人造前歯',             team: 'C', kind: 'active',   uses: 2,
+      desc: 'ゲーム中2回まで。廊下で発動し、同じ階・同じ縦列の任意の廊下マスへ一気に移動できる。進路上の敵は撃破。' },
     { id: 'kusaidama', name: '門間の臭い玉',               team: 'B', kind: 'passive',
       desc: '敵のメガホン以外の駒は、この駒の周囲1マスに入れない。' },
     { id: 'moonwalk',  name: 'ヒロフミのムーンウォーク',   team: 'A',                 kind: 'passive',
@@ -748,6 +748,18 @@ const WEAPONS = [
 ];
 const WP = {};
 WEAPONS.forEach(function(w) { WP[w.id] = w; });
+function weaponUseLimit(w) { return w ? (w.uses || (w.once ? 1 : 0)) : 0; }
+function weaponUsedCount(g, team, id) {
+    var v = g && g.used && g.used[team] ? g.used[team][id] : 0;
+    return (typeof v === 'number') ? v : (v ? 1 : 0);
+}
+function weaponSpent(g, team, w) {
+    var limit = weaponUseLimit(w);
+    return !!(limit && weaponUsedCount(g, team, w.id) >= limit);
+}
+function markWeaponUsed(g, team, id) {
+    g.used[team][id] = weaponUsedCount(g, team, id) + 1;
+}
 function wpName(id) { return (WP[id] && WP[id].name) || ''; }
 /* 通称つきの表示名： 村上の不法滞在（でっかい鍵） */
 function wpFull(id) {
@@ -895,7 +907,7 @@ const RULES = (function() {
                     sid: pre + n, team: team, role: p.role, num: n, pos: p.pos,
                     alive: true, steps: 0, locked: false,
                     name: m.name, year: m.year, sex: m.sex, wp: p.wp || null,
-                    stun: false, maebaDeclared: false, maebaReady: false
+                    stun: false
                 });
             });
         }
@@ -960,8 +972,6 @@ const RULES = (function() {
             if (s.team !== team || !s.alive) return;
             s.steps = stepsFor(g, s);
             s.locked = false;
-            s.maebaReady = !!s.maebaDeclared;
-            s.maebaDeclared = false;
             if (s.stun) { s.stun = false; s.steps = 0; }
             if (locked && GAKUREKI_FREE.indexOf(s.name) < 0) s.steps = 0;
         });
@@ -1095,8 +1105,40 @@ const RULES = (function() {
         return moved;
     }
 
+    function maebaPath(g, s, to) {
+        const from = corrIndex(s.pos);
+        const dest = corrIndex(to);
+        if (!from) return { ok: false, err: '廊下にいる時だけ使えます' };
+        if (!dest || dest.floor !== from.floor || dest.col !== from.col) return { ok: false, err: '同じ階・同じ縦列の廊下マスを選んでください' };
+        if (dest.idx === from.idx) return { ok: false, err: '現在地以外を選んでください' };
+        const dir = dest.idx > from.idx ? 1 : -1;
+        const path = [];
+        for (let idx = from.idx + dir; idx !== dest.idx + dir; idx += dir) {
+            const nxt = corrIdToPos(from.floor, idx, from.col);
+            if (!nxt) return { ok: false, err: 'そこへは移動できません' };
+            if (allyAt(g, nxt, s.team)) return { ok: false, err: '味方の駒を飛び越せません' };
+            if (kusaiBlocked(g, s, nxt)) return { ok: false, err: '門間の臭い玉が臭くて通れません' };
+            path.push(nxt);
+        }
+        return { ok: true, path: path };
+    }
+
+    function maebaTargets(g, sid) {
+        const s = getS(g, sid);
+        const c = s && s.alive ? corrIndex(s.pos) : null;
+        if (!c) return [];
+        const out = [];
+        for (let idx = 0; idx <= 29; idx++) {
+            if (idx === c.idx) continue;
+            const to = corrIdToPos(c.floor, idx, c.col);
+            if (to && maebaPath(g, s, to).ok) out.push(to);
+        }
+        return out;
+    }
+
     /* ===== 任意発動の装備品 =====
-       targetSid が要るもの: hardgel（見えている敵の女）/ daichari（見えている敵） */
+       targetSid が要るもの: hardgel（見えている敵の女）/ daichari（見えている敵）
+       maeba は targetSid の代わりに移動先マスIDを渡す */
     function useWeapon(g, sid, targetSid, direction) {
         if (g.phase !== 'play') return { ok: false, err: 'ゲームは進行中ではありません' };
         const s = getS(g, sid);
@@ -1105,7 +1147,7 @@ const RULES = (function() {
         const w = WP[s.wp];
         if (!w) return { ok: false, err: '装備品がありません' };
         if (w.kind !== 'active') return { ok: false, err: wpName(s.wp) + ' は任意発動できません' };
-        if (w.once && g.used[s.team][w.id]) return { ok: false, err: wpName(s.wp) + ' は使用済みです' };
+        if (weaponSpent(g, s.team, w)) return { ok: false, err: wpName(s.wp) + ' は使用済みです' };
         const foe = OTHER[s.team];
         const kills = [];
         /* 画面中央のポップアップ用（クライアントが拾って表示する） */
@@ -1180,33 +1222,24 @@ const RULES = (function() {
             trimLog(g); return { ok: true };
         }
         if (w.id === 'maeba') {
-            if (s.maebaReady) return { ok: false, err: 'すでに宣言済みです。「突進」で使ってください' };
-            if (s.maebaDeclared) return { ok: false, err: 'このターンはもう宣言しています' };
-            s.maebaDeclared = true;
-            g.log.push('🦷 平井の人造前歯を宣言！ ' + plbl(s) + ' は次の自分のターンに突進できる');
-            trimLog(g); return { ok: true };
+            return maebaMove(g, sid, targetSid);
         }
         return { ok: false, err: '未対応の装備品です' };
     }
 
-    /* 【平井の人造前歯】宣言済みの駒が、敵陣方向へ縦に突進する */
-    function maebaMove(g, sid) {
+    /* 【平井の人造前歯】: 同じ階・同じ縦列の任意マスへ一気に移動する */
+    function maebaMove(g, sid, to) {
         if (g.phase !== 'play') return { ok: false, err: 'ゲームは進行中ではありません' };
         const s = getS(g, sid);
         if (!s || !s.alive) return { ok: false, err: 'その駒は動かせません' };
         if (s.team !== g.activeTeam) return { ok: false, err: '相手のターンです' };
-        if (!s.maebaReady) return { ok: false, err: '前のターンに宣言が必要です' };
-        if (!corrIndex(s.pos)) return { ok: false, err: '廊下にいる時だけ突進できます' };
-        const sign = forwardSign(s.team);
+        if (s.wp !== 'maeba') return { ok: false, err: '平井の人造前歯を装備していません' };
+        if (weaponSpent(g, s.team, WP.maeba)) return { ok: false, err: '平井の人造前歯は使用済みです' };
+        const route = maebaPath(g, s, to);
+        if (!route.ok) return route;
         const kills = [];
         let moved = 0;
-        for (;;) {
-            const c = corrIndex(s.pos);
-            if (!c) break;
-            const nxt = corrIdToPos(c.floor, c.idx + sign, c.col);
-            if (!nxt) break;
-            if (allyAt(g, nxt, s.team)) break;
-            if (kusaiBlocked(g, s, nxt)) break;
+        for (const nxt of route.path) {
             const v = enemyAt(g, nxt, s.team);
             if (SQ[s.pos].corridor !== SQ[nxt].corridor && !g.crossed[SQ[nxt].floor]) {
                 g.crossed[SQ[nxt].floor] = true;
@@ -1216,9 +1249,9 @@ const RULES = (function() {
             s.pos = nxt; moved++;
             if (v && killPiece(g, v, '⚔ 人造前歯の突進！ ' + plbl(v) + ' が ' + nxt + ' で撃破された')) kills.push(v);
         }
-        s.maebaReady = false;
+        markWeaponUsed(g, s.team, 'maeba');
         s.steps = 0;
-        g.log.push('🦷 ' + plbl(s) + ' が ' + moved + 'マス突進して ' + s.pos + ' へ');
+        g.log.push('🦷 ' + plbl(s) + ' が人造前歯で ' + moved + 'マス突進して ' + s.pos + ' へ（残り' + Math.max(0, 2 - weaponUsedCount(g, s.team, 'maeba')) + '回）');
         splashAttack(g, s, kills);
         kusanagiReveal(g, s);
         checkWins(g, s, s.pos, kills);
@@ -1358,6 +1391,7 @@ const RULES = (function() {
         stepsFor,
         useWeapon,
         maebaMove,
+        maebaTargets,
         soldierAt,
         allyAt,
         enemyAt,
@@ -1974,6 +2008,7 @@ if (typeof module !== 'undefined' && module.exports) {
         squad: { blue: null, red: null },
         target: null,
         targetVictim: null,
+        maebaAim: null,
         inspect: null,
         fxOpen: false,
         logOpen: false,
@@ -2355,6 +2390,7 @@ if (typeof module !== 'undefined' && module.exports) {
         APP.g = null;
         APP.view = 'god';
         APP.selected = null;
+        APP.maebaAim = null;
         APP.histG = [];
         APP.logOpen = false;
         APP.edit = {
@@ -2404,6 +2440,7 @@ if (typeof module !== 'undefined' && module.exports) {
         APP.g = RULES.newGame(APP.edit.blue.list, APP.edit.red.list, APP.localFirst, { blue: APP.letter.blue, red: APP.letter.red });
         APP.histG = [];
         APP.selected = null;
+        APP.maebaAim = null;
         APP.logOpen = false;
         pzFit();
         renderAll();
@@ -2461,6 +2498,7 @@ if (typeof module !== 'undefined' && module.exports) {
         APP.g = null;
         APP.view = t;
         APP.selected = null;
+        APP.maebaAim = null;
         APP.histG = [];
         APP.logOpen = false;
         APP.thinking = false;
@@ -2488,6 +2526,7 @@ if (typeof module !== 'undefined' && module.exports) {
             { blue: APP.letter.blue, red: APP.letter.red });
         APP.histG = [];
         APP.selected = null;
+        APP.maebaAim = null;
         APP.logOpen = false;
         APP.cpuMem = {};
         zoomMyHalf();
@@ -2511,6 +2550,7 @@ if (typeof module !== 'undefined' && module.exports) {
         APP.thinking = false;
         APP.histG = [];
         APP.selected = null;
+        APP.maebaAim = null;
         var g = APP.g;
         renderAll();
         /* AI の移動を1歩ずつ見せてから、ターンを終える */
@@ -2742,6 +2782,7 @@ if (typeof module !== 'undefined' && module.exports) {
     function enterPlacementOnline() {
         APP.g = null;
         APP.selected = null;
+        APP.maebaAim = null;
         APP.histG = [];
         APP.logOpen = false;
         APP.placeSlot = 0;
@@ -2829,6 +2870,7 @@ if (typeof module !== 'undefined' && module.exports) {
         APP.selected = null;
         APP.target = null;
         APP.targetVictim = null;
+        APP.maebaAim = null;
         if (APP.writeTimer) {
             clearTimeout(APP.writeTimer);
             APP.writeTimer = null;
@@ -2863,6 +2905,7 @@ if (typeof module !== 'undefined' && module.exports) {
         syncLetters(APP.meta);
         APP.g = null;
         APP.selected = null;
+        APP.maebaAim = null;
         APP.histG = [];
         APP.logOpen = false;
         APP.myReady = false;
@@ -2908,6 +2951,7 @@ if (typeof module !== 'undefined' && module.exports) {
         APP.meta = null;
         APP.myTeam = null;
         APP.selected = null;
+        APP.maebaAim = null;
         APP.histG = [];
         APP.logOpen = false;
         APP.view = 'god';
@@ -3048,7 +3092,7 @@ if (typeof module !== 'undefined' && module.exports) {
         mine.forEach(function(w) {
             h += '<div class="item"><div><span class="nm">' + esc(w.name) + '</span>' +
                 (w.alias ? '<span class="al">' + esc(w.alias) + '</span>' : '') +
-                '<span class="kd">' + KIND_JP[w.kind] + (w.once ? '・1回' : '') + '</span></div>' +
+                '<span class="kd">' + KIND_JP[w.kind] + (weaponUseLimit(w) ? '・' + weaponUseLimit(w) + '回' : '') + '</span></div>' +
                 '<div class="ds">' + esc(w.desc) + '</div>' +
                 (w.only ? '<div class="ow">※ ' + esc(w.only) + ' 専用</div>' : '') +
                 (owner[w.id] ? '<div class="ow">→ ' + esc(owner[w.id]) + ' が装備中</div>' : '') +
@@ -3123,6 +3167,9 @@ if (typeof module !== 'undefined' && module.exports) {
     }
 
     function setSelected(sid) {
+        APP.maebaAim = null;
+        APP.target = null;
+        APP.targetVictim = null;
         APP.selected = (APP.selected === sid) ? null : sid;
         renderAll();
     }
@@ -3137,6 +3184,7 @@ if (typeof module !== 'undefined' && module.exports) {
         APP._trailSeen = APP.g.trailSeq || 0;
         var s = RULES.getS(APP.g, APP.selected);
         if (!s || s.steps === 0 || s.locked) APP.selected = null;
+        APP.maebaAim = null;
         if (APP.g.phase === 'over') {
             markDirty(true);
             showBanner();
@@ -3148,7 +3196,7 @@ if (typeof module !== 'undefined' && module.exports) {
         if (!s || !s.alive || !s.wp) return null;
         var w = WP[s.wp];
         if (!w || w.kind !== 'active') return null;
-        if (w.once && APP.g.used[s.team][w.id]) return null;
+        if (weaponSpent(APP.g, s.team, w)) return null;
         return w;
     }
     /* 対象指定が要る装備品 */
@@ -3159,9 +3207,20 @@ if (typeof module !== 'undefined' && module.exports) {
         var s = RULES.getS(APP.g, APP.selected);
         var w = activeWeaponOf(s);
         if (!w) { hint('いま使える装備品がありません'); return; }
+        if (w.id === 'maeba') {
+            var targets = RULES.maebaTargets(APP.g, s.sid);
+            if (!targets.length) { hint('同じ縦列に移動できるマスがありません'); return; }
+            APP.maebaAim = s.sid;
+            APP.target = null;
+            APP.targetVictim = null;
+            hint('人造前歯の移動先をタップしてください');
+            renderAll();
+            return;
+        }
         if (needsTarget(w)) {
             APP.target = s.sid;
             APP.targetVictim = null;
+            APP.maebaAim = null;
             hint('対象にする敵の駒をタップしてください');
             renderAll();
             return;
@@ -3173,6 +3232,7 @@ if (typeof module !== 'undefined' && module.exports) {
         var r = RULES.useWeapon(APP.g, sid, targetSid, direction);
         APP.target = null;
         APP.targetVictim = null;
+        APP.maebaAim = null;
         if (!r.ok) {
             APP.histG.pop();
             hint(r.err);
@@ -3180,21 +3240,26 @@ if (typeof module !== 'undefined' && module.exports) {
             return;
         }
         APP.selected = null;
+        APP.maebaAim = null;
         APP._trailSeen = APP.g.trailSeq || 0;
         markDirty(true);
         if (APP.g.phase === 'over') showBanner();
         renderAll();
     }
-    function maebaUI() {
-        if (!canAct() || !APP.selected) return;
+    function maebaUI(to) {
+        var sid = APP.maebaAim || APP.selected;
+        if (!canAct() || !sid) return;
         APP.histG.push(JSON.parse(JSON.stringify(APP.g)));
-        var r = RULES.maebaMove(APP.g, APP.selected);
+        var r = RULES.maebaMove(APP.g, sid, to);
+        APP.maebaAim = null;
         if (!r.ok) {
             APP.histG.pop();
             hint(r.err);
+            renderAll();
             return;
         }
         APP.selected = null;
+        APP.maebaAim = null;
         APP._trailSeen = APP.g.trailSeq || 0;
         markDirty(true);
         if (APP.g.phase === 'over') showBanner();
@@ -3212,6 +3277,7 @@ if (typeof module !== 'undefined' && module.exports) {
         }
         APP.g = APP.histG.pop();
         APP.selected = null;
+        APP.maebaAim = null;
         markDirty(false);
         renderAll();
     }
@@ -3221,6 +3287,7 @@ if (typeof module !== 'undefined' && module.exports) {
         RULES.endTurn(APP.g);
         APP.histG = [];
         APP.selected = null;
+        APP.maebaAim = null;
         markDirty(true);
         if (APP.g.phase === 'over') showBanner();
         renderAll();
@@ -3434,8 +3501,22 @@ if (typeof module !== 'undefined' && module.exports) {
             return;
         }
         if (!d) {
-            if (APP.selected) {
+            if (APP.maebaAim || APP.selected) {
+                APP.maebaAim = null;
                 APP.selected = null;
+                renderAll();
+            }
+            return;
+        }
+        if (d.step && APP.maebaAim) {
+            maebaUI(d.step);
+            return;
+        }
+        if (d.id && APP.maebaAim) {
+            if (RULES.maebaTargets(APP.g, APP.maebaAim).indexOf(d.id) >= 0) maebaUI(d.id);
+            else {
+                APP.maebaAim = null;
+                hint('人造前歯の指定を取り消しました');
                 renderAll();
             }
             return;
@@ -3446,6 +3527,16 @@ if (typeof module !== 'undefined' && module.exports) {
         }
         if (d.pid) {
             var s = RULES.getS(APP.g, d.pid);
+            if (APP.maebaAim) {
+                var okTarget = s && s.alive && RULES.maebaTargets(APP.g, APP.maebaAim).indexOf(s.pos) >= 0;
+                if (okTarget) maebaUI(s.pos);
+                else {
+                    APP.maebaAim = null;
+                    hint('人造前歯の指定を取り消しました');
+                    renderAll();
+                }
+                return;
+            }
             /* 装備品の対象選択中なら、敵の駒タップで発動 */
             if (APP.target) {
                 if (s && s.alive && s.team !== RULES.getS(APP.g, APP.target).team) {
@@ -3660,20 +3751,29 @@ if (typeof module !== 'undefined' && module.exports) {
             });
         }
         /* 選択とハイライト */
-        if (g && g.phase === 'play' && APP.selected) {
-            var sel = RULES.getS(g, APP.selected);
+        if (g && g.phase === 'play' && (APP.maebaAim || APP.selected)) {
+            var aimingMaeba = !!APP.maebaAim;
+            var sel = RULES.getS(g, APP.maebaAim || APP.selected);
             if (sel && sel.alive && sel.team === g.activeTeam) {
                 var c = centerOf(sel.pos);
-                out += '<circle cx="' + c[0] + '" cy="' + c[1] + '" r="23" fill="none" stroke="#e8c25a" stroke-width="3.5" stroke-dasharray="6 4" pointer-events="none"/>';
-                if (sel.steps > 0 && !sel.locked) {
+                var hi = aimingMaeba ? '#ff6b4a' : '#e8c25a';
+                var fill = aimingMaeba ? 'rgba(255,107,74,0.28)' : 'rgba(232,194,90,0.30)';
+                out += '<circle cx="' + c[0] + '" cy="' + c[1] + '" r="23" fill="none" stroke="' + hi + '" stroke-width="3.5" stroke-dasharray="6 4" pointer-events="none"/>';
+                if (aimingMaeba) {
+                    RULES.maebaTargets(g, sel.sid).forEach(function(to) {
+                        var q = SQ[to];
+                        out += '<rect data-step="' + to + '" x="' + (q.x + 1.5) + '" y="' + (q.y + 1.5) + '" width="' + (q.w - 3) + '" height="' + (q.h - 3) + '" fill="' + fill + '" stroke="' + hi + '" stroke-width="3"/>';
+                    });
+                } else if (sel.steps > 0 && !sel.locked) {
                     ADJ[sel.pos].forEach(function(to) {
                         if (RULES.allyAt(g, to, sel.team)) return;
                         var q = SQ[to];
-                        if (q.kind === 'T') out += '<circle data-step="' + to + '" cx="' + (q.x + 20) + '" cy="' + (q.y + 20) + '" r="17" fill="rgba(232,194,90,0.30)" stroke="#e8c25a" stroke-width="3"/>';
-                        else out += '<rect data-step="' + to + '" x="' + (q.x + 1.5) + '" y="' + (q.y + 1.5) + '" width="' + (q.w - 3) + '" height="' + (q.h - 3) + '" fill="rgba(232,194,90,0.30)" stroke="#e8c25a" stroke-width="3"' + (q.kind === 'honden' ? ' rx="7"' : '') + '/>';
+                        if (q.kind === 'T') out += '<circle data-step="' + to + '" cx="' + (q.x + 20) + '" cy="' + (q.y + 20) + '" r="17" fill="' + fill + '" stroke="' + hi + '" stroke-width="3"/>';
+                        else out += '<rect data-step="' + to + '" x="' + (q.x + 1.5) + '" y="' + (q.y + 1.5) + '" width="' + (q.w - 3) + '" height="' + (q.h - 3) + '" fill="' + fill + '" stroke="' + hi + '" stroke-width="3"' + (q.kind === 'honden' ? ' rx="7"' : '') + '/>';
                     });
                 }
-                out += '<g pointer-events="none"><rect x="' + (c[0] - 27) + '" y="' + (c[1] - 40) + '" width="54" height="18" rx="9" fill="#e8c25a"/><text x="' + c[0] + '" y="' + (c[1] - 27) + '" text-anchor="middle" font-size="11" font-weight="700" fill="#2a2a20">残り' + sel.steps + '歩</text></g>';
+                var badge = aimingMaeba ? '前歯' : ('残り' + sel.steps + '歩');
+                out += '<g pointer-events="none"><rect x="' + (c[0] - 27) + '" y="' + (c[1] - 40) + '" width="54" height="18" rx="9" fill="' + hi + '"/><text x="' + c[0] + '" y="' + (c[1] - 27) + '" text-anchor="middle" font-size="11" font-weight="700" fill="#2a2a20">' + badge + '</text></g>';
             }
         }
         b.innerHTML = out;
@@ -3760,6 +3860,12 @@ if (typeof module !== 'undefined' && module.exports) {
             APP.inspect = null;
         }
         var s = APP.selected ? RULES.getS(g, APP.selected) : null;
+        var ms = APP.maebaAim ? RULES.getS(g, APP.maebaAim) : null;
+        if (ms && ms.alive) {
+            el.innerHTML = '人造前歯: <b>' + esc(RULES.plbl(ms)) + '</b> の移動先を同じ縦列から選択中' +
+                '<div class="small mut">赤く光っている廊下マスへ一気に移動します。</div>';
+            return;
+        }
         if (s) {
             var wtxt = s.wp ? '　<span class="tag">' + esc(RULES.wpFull(s.wp)) + '</span>' : '';
             el.innerHTML = '選択中: <b>' + esc(RULES.plbl(s)) + '</b>（' + s.year + '／' + sexJP(s.sex) + '）' +
@@ -3801,7 +3907,9 @@ if (typeof module !== 'undefined' && module.exports) {
         } else if (g.phase === 'play') {
             var mine = canAct();
             var sel = APP.selected ? RULES.getS(g, APP.selected) : null;
-            if (APP.target) {
+            if (APP.maebaAim) {
+                h += '<span class="tag" id="targetNote">前歯の移動先を選択</span>' + btn('cancel-target', '取消', 'warn');
+            } else if (APP.target) {
                 if (APP.targetVictim) {
                     h += '<span class="tag" id="targetNote">移動方向を選択</span>' +
                         btn('daichari-forward', '前へ5マス', 'warn') +
@@ -3811,9 +3919,12 @@ if (typeof module !== 'undefined' && module.exports) {
                     h += '<span class="tag" id="targetNote">対象の敵をタップ</span>' + btn('cancel-target', '取消', 'warn');
                 }
             } else if (sel && mine) {
-                if (sel.maebaReady) h += btn('maeba', '🦷 突進する', 'warn');
                 var aw = activeWeaponOf(sel);
-                if (aw) h += btn('usewp', '⚡ ' + aw.name, 'warn');
+                if (aw) {
+                    var lim = weaponUseLimit(aw);
+                    var left = lim ? Math.max(0, lim - weaponUsedCount(g, sel.team, aw.id)) : null;
+                    h += btn(aw.id === 'maeba' ? 'maeba' : 'usewp', '⚡ ' + aw.name + (left !== null ? ' 残' + left : ''), 'warn');
+                }
             }
             h += btn('log-open', 'ログ', '');
             h += btn('end', 'ターン終了', 'primary', !mine);
@@ -4080,11 +4191,12 @@ if (typeof module !== 'undefined' && module.exports) {
                 useWeaponUI();
                 break;
             case 'maeba':
-                maebaUI();
+                useWeaponUI();
                 break;
             case 'cancel-target':
                 APP.target = null;
                 APP.targetVictim = null;
+                APP.maebaAim = null;
                 renderAll();
                 break;
             case 'log-open':
@@ -4460,8 +4572,7 @@ function weaponActionCandidates(g, team, tactic) {
     if (!s.wp) return;
     const w = WP[s.wp];
     if (!w || w.kind !== 'active') return;
-    if (s.maebaReady) out.push({ kind: 'maebaMove', sid: s.sid, wp: 'maeba' });
-    if (w.once && g.used[team][w.id]) return;
+    if (weaponSpent(g, team, w)) return;
     if (w.id === 'hardgel') {
       g.soldiers.forEach(v => {
         if (v.alive && v.team === foe && v.sex === 'F' && vis.has(v.pos)) {
@@ -4486,11 +4597,7 @@ function weaponActionCandidates(g, team, tactic) {
     } else if (w.id === 'funnel') {
       if (aliveList(g, foe).length) out.push({ kind: 'use', sid: s.sid, wp: w.id });
     } else if (w.id === 'maeba') {
-      const d = DIST[team][s.pos] ?? MAXD;
-      const wantsCharge = tactic === 'rush' || tactic === 'honden' || tactic === 'annihilate';
-      if (!s.maebaDeclared && corrIndex(s.pos) && (wantsCharge || d <= 18)) {
-        out.push({ kind: 'use', sid: s.sid, wp: w.id });
-      }
+      RULES.maebaTargets(g, s.sid).forEach(to => out.push({ kind: 'maebaMove', sid: s.sid, wp: w.id, targetPos: to }));
     }
   });
   return out;
@@ -4510,14 +4617,10 @@ function scoreWeaponAction(g, action, team, tactic) {
   if (action.wp === 'gakureki') {
     return lockableByGakureki(g, team) * 420 + (tactic === 'guard' ? 140 : 0);
   }
-  if (action.wp === 'maeba' && action.kind === 'use') {
-    const d = DIST[team][s.pos] ?? MAXD;
-    return Math.max(0, (22 - d) * 18) + (tactic === 'honden' ? 130 : 0) + (tactic === 'rush' ? 90 : 0);
-  }
   const before = evalState(g, team);
   const gc = clone(g);
   let r;
-  if (action.kind === 'maebaMove') r = RULES.maebaMove(gc, action.sid);
+  if (action.kind === 'maebaMove') r = RULES.maebaMove(gc, action.sid, action.targetPos);
   else r = RULES.useWeapon(gc, action.sid, action.targetSid || null, action.direction);
   if (!r || !r.ok) return -1e18;
   let sc = evalState(gc, team) - before;
@@ -4547,9 +4650,9 @@ function useTacticalWeapons(g, team, mem, opts) {
       if (sc > bestScore) { bestScore = sc; best = a; }
     }
     if (!best || bestScore < weaponThreshold(tactic, opts.afterMove)) break;
-    const r = best.kind === 'maebaMove' ? RULES.maebaMove(g, best.sid) : RULES.useWeapon(g, best.sid, best.targetSid || null, best.direction);
+    const r = best.kind === 'maebaMove' ? RULES.maebaMove(g, best.sid, best.targetPos) : RULES.useWeapon(g, best.sid, best.targetSid || null, best.direction);
     if (!r || !r.ok) break;
-    used.push({ wp: best.wp, sid: best.sid, targetSid: best.targetSid || null, direction: best.direction || null, score: bestScore });
+    used.push({ wp: best.wp, sid: best.sid, targetSid: best.targetSid || null, targetPos: best.targetPos || null, direction: best.direction || null, score: bestScore });
     updateMemory(g, team, mem || {});
   }
   return used;
