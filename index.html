@@ -723,7 +723,7 @@ const WEAPONS = [
     { id: 'sennichi',  name: '江口の千日計画',             team: 'B',                 kind: 'passive',
       desc: '第9ラウンドまでこの駒の行動マスは1。第10ラウンドから10になる。' },
     { id: 'daichari',  name: '中村のダイチャリ',           team: 'C',                 kind: 'active',   once: true,
-      desc: '見えている敵1人を、その敵の進行方向へ強制的に5マス前進させる。潜伏中の敵には効かない。' },
+      desc: '見えている敵1人を、その敵の進行方向または逆方向へ強制的に5マス移動させる。潜伏中の敵には効かない。' },
     { id: 'virgin',    name: '前田のヴァージンロード',     team: 'A',                 kind: 'passive',
       desc: '同じ通りの同じ列で、この駒の正面（敵陣側）にいる敵の【男】の行動マス-2。' },
     { id: 'gakureki',  name: '西尾の学歴コンプ',           team: 'B',                 kind: 'active',   once: true,
@@ -1066,9 +1066,9 @@ const RULES = (function() {
         return { ok: true, captured: kills.length ? kills[0].sid : null };
     }
 
-    /* ===== 強制移動（【中村のダイチャリ】用）: その駒の進行方向へ n マス ===== */
-    function forcePush(g, v, n) {
-        const sign = forwardSign(v.team);
+    /* ===== 強制移動（【中村のダイチャリ】用）: 前後どちらかへ n マス ===== */
+    function forcePush(g, v, n, direction) {
+        const sign = forwardSign(v.team) * (direction === 'backward' ? -1 : 1);
         let moved = 0;
         for (let i = 0; i < n; i++) {
             const c = corrIndex(v.pos);
@@ -1083,7 +1083,7 @@ const RULES = (function() {
 
     /* ===== 任意発動の装備品 =====
        targetSid が要るもの: hardgel（見えている敵の女）/ daichari（見えている敵） */
-    function useWeapon(g, sid, targetSid) {
+    function useWeapon(g, sid, targetSid, direction) {
         if (g.phase !== 'play') return { ok: false, err: 'ゲームは進行中ではありません' };
         const s = getS(g, sid);
         if (!s || !s.alive) return { ok: false, err: 'その駒は行動できません' };
@@ -1124,9 +1124,10 @@ const RULES = (function() {
             if (SQ[v.pos].kind === 'T') return { ok: false, err: '潜伏中の敵には効きません' };
             if (!corrIndex(v.pos)) return { ok: false, err: '廊下にいる敵にしか効きません' };
             if (!visibleSquares(g, s.team).has(v.pos)) return { ok: false, err: '見えている敵しか対象にできません' };
+            const dir = direction === 'backward' ? 'backward' : 'forward';
             g.used[s.team].daichari = true;
-            const mv = forcePush(g, v, 5);
-            g.log.push('🚲 中村のダイチャリ！ ' + plbl(v) + ' を ' + mv + 'マス強制前進させ ' + v.pos + ' へ');
+            const mv = forcePush(g, v, 5, dir);
+            g.log.push('🚲 中村のダイチャリ！ ' + plbl(v) + ' を' + (dir === 'backward' ? '後ろ' : '前') + 'へ ' + mv + 'マス強制移動させ ' + v.pos + ' へ');
             checkWins(g, v, v.pos, []);
             trimLog(g); return { ok: true };
         }
@@ -1958,6 +1959,7 @@ if (typeof module !== 'undefined' && module.exports) {
         letter: { blue: null, red: null },
         squad: { blue: null, red: null },
         target: null,
+        targetVictim: null,
         inspect: null,
         fxOpen: false,
         roomOpen: false,
@@ -2798,6 +2800,7 @@ if (typeof module !== 'undefined' && module.exports) {
         APP.histG = [];
         APP.selected = null;
         APP.target = null;
+        APP.targetVictim = null;
         if (APP.writeTimer) {
             clearTimeout(APP.writeTimer);
             APP.writeTimer = null;
@@ -3119,16 +3122,18 @@ if (typeof module !== 'undefined' && module.exports) {
         if (!w) { hint('いま使える装備品がありません'); return; }
         if (needsTarget(w)) {
             APP.target = s.sid;
+            APP.targetVictim = null;
             hint('対象にする敵の駒をタップしてください');
             renderAll();
             return;
         }
         applyWeapon(s.sid, null);
     }
-    function applyWeapon(sid, targetSid) {
+    function applyWeapon(sid, targetSid, direction) {
         APP.histG.push(JSON.parse(JSON.stringify(APP.g)));
-        var r = RULES.useWeapon(APP.g, sid, targetSid);
+        var r = RULES.useWeapon(APP.g, sid, targetSid, direction);
         APP.target = null;
+        APP.targetVictim = null;
         if (!r.ok) {
             APP.histG.pop();
             hint(r.err);
@@ -3405,9 +3410,18 @@ if (typeof module !== 'undefined' && module.exports) {
             /* 装備品の対象選択中なら、敵の駒タップで発動 */
             if (APP.target) {
                 if (s && s.alive && s.team !== RULES.getS(APP.g, APP.target).team) {
-                    applyWeapon(APP.target, s.sid);
+                    var src = RULES.getS(APP.g, APP.target);
+                    var sw = src && src.wp ? WP[src.wp] : null;
+                    if (sw && sw.id === 'daichari') {
+                        APP.targetVictim = s.sid;
+                        hint('前か後ろを選んでください');
+                        renderAll();
+                    } else {
+                        applyWeapon(APP.target, s.sid);
+                    }
                 } else {
                     APP.target = null;
+                    APP.targetVictim = null;
                     hint('対象の指定を取り消しました');
                     renderAll();
                 }
@@ -3747,7 +3761,14 @@ if (typeof module !== 'undefined' && module.exports) {
             var mine = canAct();
             var sel = APP.selected ? RULES.getS(g, APP.selected) : null;
             if (APP.target) {
-                h += '<span class="tag" id="targetNote">対象の敵をタップ</span>' + btn('cancel-target', '取消', 'warn');
+                if (APP.targetVictim) {
+                    h += '<span class="tag" id="targetNote">移動方向を選択</span>' +
+                        btn('daichari-forward', '前へ5マス', 'warn') +
+                        btn('daichari-backward', '後ろへ5マス', 'warn') +
+                        btn('cancel-target', '取消', 'warn');
+                } else {
+                    h += '<span class="tag" id="targetNote">対象の敵をタップ</span>' + btn('cancel-target', '取消', 'warn');
+                }
             } else if (sel && mine) {
                 if (sel.maebaReady) h += btn('maeba', '🦷 突進する', 'warn');
                 var aw = activeWeaponOf(sel);
@@ -4022,7 +4043,14 @@ if (typeof module !== 'undefined' && module.exports) {
                 break;
             case 'cancel-target':
                 APP.target = null;
+                APP.targetVictim = null;
                 renderAll();
+                break;
+            case 'daichari-forward':
+                if (APP.target && APP.targetVictim) applyWeapon(APP.target, APP.targetVictim, 'forward');
+                break;
+            case 'daichari-backward':
+                if (APP.target && APP.targetVictim) applyWeapon(APP.target, APP.targetVictim, 'backward');
                 break;
             case 'squad-done':
                 squadDone();
@@ -4394,7 +4422,8 @@ function weaponActionCandidates(g, team, tactic) {
     } else if (w.id === 'daichari') {
       g.soldiers.forEach(v => {
         if (v.alive && v.team === foe && SQ[v.pos].kind !== 'T' && corrIndex(v.pos) && vis.has(v.pos)) {
-          out.push({ kind: 'use', sid: s.sid, wp: w.id, targetSid: v.sid });
+          out.push({ kind: 'use', sid: s.sid, wp: w.id, targetSid: v.sid, direction: 'forward' });
+          out.push({ kind: 'use', sid: s.sid, wp: w.id, targetSid: v.sid, direction: 'backward' });
         }
       });
     } else if (w.id === 'fuhou') {
@@ -4440,7 +4469,7 @@ function scoreWeaponAction(g, action, team, tactic) {
   const gc = clone(g);
   let r;
   if (action.kind === 'maebaMove') r = RULES.maebaMove(gc, action.sid);
-  else r = RULES.useWeapon(gc, action.sid, action.targetSid || null);
+  else r = RULES.useWeapon(gc, action.sid, action.targetSid || null, action.direction);
   if (!r || !r.ok) return -1e18;
   let sc = evalState(gc, team) - before;
   if (gc.phase === 'over' && gc.winner === team) sc += 1e7;
@@ -4469,9 +4498,9 @@ function useTacticalWeapons(g, team, mem, opts) {
       if (sc > bestScore) { bestScore = sc; best = a; }
     }
     if (!best || bestScore < weaponThreshold(tactic, opts.afterMove)) break;
-    const r = best.kind === 'maebaMove' ? RULES.maebaMove(g, best.sid) : RULES.useWeapon(g, best.sid, best.targetSid || null);
+    const r = best.kind === 'maebaMove' ? RULES.maebaMove(g, best.sid) : RULES.useWeapon(g, best.sid, best.targetSid || null, best.direction);
     if (!r || !r.ok) break;
-    used.push({ wp: best.wp, sid: best.sid, targetSid: best.targetSid || null, score: bestScore });
+    used.push({ wp: best.wp, sid: best.sid, targetSid: best.targetSid || null, direction: best.direction || null, score: bestScore });
     updateMemory(g, team, mem || {});
   }
   return used;

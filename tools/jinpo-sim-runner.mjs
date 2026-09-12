@@ -120,12 +120,12 @@ window.__JINPO_CORE__ = {
 
 function instrumentRules(RULES) {
   const origUse = RULES.useWeapon;
-  RULES.useWeapon = function useWeaponWithEvent(g, sid, targetSid) {
+  RULES.useWeapon = function useWeaponWithEvent(g, sid, targetSid, direction) {
     const s = RULES.getS(g, sid);
     const wp = s && s.wp;
     const team = s && s.team;
     const name = s && s.name;
-    const r = origUse(g, sid, targetSid);
+    const r = origUse(g, sid, targetSid, direction);
     if (r && r.ok && team && wp) {
       g.simEvents = g.simEvents || [];
       g.simEvents.push({
@@ -135,6 +135,7 @@ function instrumentRules(RULES) {
         name,
         team,
         targetSid: targetSid || null,
+        direction: direction || null,
         turn: g.turn,
         round: Math.ceil(g.turn / 2)
       });
@@ -354,7 +355,7 @@ function playGame(engine, opts, config, gameIndex, rand) {
     redAlive: RULES.aliveCount(g, 'red'),
     blueWeapons: equippedWeapons(bluePlace),
     redWeapons: equippedWeapons(redPlace),
-    usedWeapons: (g.simEvents || []).map(e => `${e.team}:${e.wp}@${e.turn}`).join('|'),
+    usedWeapons: (g.simEvents || []).map(e => `${e.team}:${e.wp}${e.direction ? ':' + e.direction : ''}@${e.turn}`).join('|'),
     events: g.simEvents || []
   };
 }
