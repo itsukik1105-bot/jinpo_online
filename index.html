@@ -645,7 +645,7 @@ BROKEN_WALL_LINKS.forEach(function(p) {
     (BROKEN_WALL_EXTRA[p[1]] || (BROKEN_WALL_EXTRA[p[1]] = [])).push(p[0]);
 });
 function kusanagiWallsBroken(g) {
-    return !!(g && g.soldiers && g.soldiers.some(function(s) { return s.alive && s.wp === 'kusanagi'; }));
+    return !!(g && (g.kusanagiOpen || (g.soldiers && g.soldiers.some(function(s) { return s.wp === 'kusanagi'; }))));
 }
 function adjacentSquares(g, id) {
     const base = ADJ[id] ? ADJ[id].slice() : [];
@@ -770,7 +770,7 @@ const WEAPONS = [
     { id: 'chinbo',    name: '吉岡の珍棒',                 team: 'B',                 kind: 'passive',
       desc: '移動時、通過した各マスの周囲1マスにも攻撃が及ぶ。' },
     { id: 'kusanagi',  name: '草薙剣',                     team: 'C',                 kind: 'passive',
-      desc: 'この装備が存在する限り全ての壁が破壊される。この駒の行動マス+1。' }
+      desc: 'ゲーム開始時から暗幕・潜伏所の扉・X/Y間の壁を破壊し、潜伏所を全開示する。この駒の行動マス+1。' }
 ];
 const WP = {};
 WEAPONS.forEach(function(w) { WP[w.id] = w; });
@@ -953,6 +953,14 @@ const RULES = (function() {
                   '　／　' + JPN['blue'] + '＝チーム' + letters.blue + '　' + JPN['red'] + '＝チーム' + letters.red],
             turnStartedAt: Date.now()
         };
+        if (soldiers.some(function(s) { return s.wp === 'kusanagi'; })) {
+            const hideouts = Object.values(SQ).filter(function(q) { return q.kind === 'T'; }).map(function(q) { return q.id; });
+            g.kusanagiOpen = true;
+            g.crossed = { 1: true, 2: true };
+            g.revealT.blue = hideouts.slice();
+            g.revealT.red = hideouts.slice();
+            g.log.push('🗡 草薙剣の効果で、開始時から暗幕と潜伏所の扉が破壊された');
+        }
         beginTurn(g);
         return g;
     }
@@ -1390,6 +1398,10 @@ const RULES = (function() {
                 }
             }
         });
+        if (wallsBroken) {
+            for (const q of Object.values(SQ))
+                if (q.kind === 'T') vis.add(q.id);
+        }
         mine.forEach(s => vis.add(s.pos));
         /* 旧セーブ互換: 以前の草薙剣で扉を破壊した潜伏所 */
         ((g.revealT && g.revealT[team]) || []).forEach(function(id) { vis.add(id); });
