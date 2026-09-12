@@ -2504,6 +2504,7 @@ if (typeof module !== 'undefined' && module.exports) {
 
     function runCpu() {
         var seen = APP.g ? (APP.g.trailSeq || 0) : 0;
+        var beforeG = APP.g ? JSON.parse(JSON.stringify(APP.g)) : null;
         try {
             if (window.SMART) window.SMART.act(APP.g, APP.cpuTeam, APP.cpuMem, APP.cpuOpt.level);
         } catch (e) {}
@@ -2518,7 +2519,7 @@ if (typeof module !== 'undefined' && module.exports) {
             if (APP.g === g && g.phase === 'play') RULES.endTurn(g);
             renderAll();
             if (g.phase === 'over') showBanner();
-        });
+        }, beforeG);
     }
 
     /* ---------- オンライン（MQTTプッシュ配信） ---------- */
@@ -2816,6 +2817,7 @@ if (typeof module !== 'undefined' && module.exports) {
     function adoptGame(gg) {
         if (!gg) return;
         if (APP.g && gg.v != null && APP.g.v != null && gg.v < APP.g.v) return;
+        var beforeG = APP.g ? JSON.parse(JSON.stringify(APP.g)) : null;
         var prevActive = APP.g ? APP.g.activeTeam : null;
         var prevPhase = APP.g ? APP.g.phase : null;
         APP.g = gg;
@@ -2842,7 +2844,7 @@ if (typeof module !== 'undefined' && module.exports) {
         APP._trailSeen = gg.trailSeq || 0;
         renderAll();
         renderNetBadge();
-        playTrail(gg, seen, function() { renderAll(); });
+        playTrail(gg, seen, function() { renderAll(); }, beforeG);
     }
 
     function notifyTurn() {
@@ -3067,11 +3069,12 @@ if (typeof module !== 'undefined' && module.exports) {
     function stopAnim() {
         if (APP._animT) { clearTimeout(APP._animT); APP._animT = null; }
         APP.animPos = null;
+        APP.animVis = null;
     }
     /* 直前に見た軌跡より後の分だけを、1歩ずつ順に再生する */
-    function playTrail(gg, after, doneCb) {
+    function playTrail(gg, after, doneCb, beforeG) {
         var tr = (gg.trail || []).filter(function(e) { return e.q > after; });
-        if (!tr.length) { doneCb(); return; }
+        if (!tr.length) { stopAnim(); doneCb(); return; }
         stopAnim();
         APP.animPos = {};
         /* 再生前の視点を覚えておき、終わったら元に戻す（自分の駒を見失わないように） */
@@ -3080,6 +3083,14 @@ if (typeof module !== 'undefined' && module.exports) {
            動かすと、開示されていない敵の居場所が画面の動きで分かってしまうため */
         var ft = fogTeamOf(gg);
         var camVis = ft ? RULES.visibleSquares(gg, ft) : null;
+        if (ft && beforeG) {
+            var beforeVis = RULES.visibleSquares(beforeG, ft);
+            APP.animVis = new Set(beforeVis);
+            camVis = camVis ? new Set(camVis) : new Set();
+            beforeVis.forEach(function(id) { camVis.add(id); });
+        } else {
+            APP.animVis = camVis;
+        }
         var i = 0;
         /* 手数が多いときはテンポを上げ、全体で2秒前後に収める */
         var wait = Math.max(70, Math.min(180, Math.round(2000 / tr.length)));
@@ -3641,8 +3652,10 @@ if (typeof module !== 'undefined' && module.exports) {
         } else {
             g.soldiers.forEach(function(s) {
                 if (!s.alive) return;
-                var ap = (APP.animPos && APP.animPos[s.sid] !== undefined) ? APP.animPos[s.sid] : s.pos;
-                if (fogTeam && s.team !== fogTeam && !vis.has(ap)) return;
+                var animating = APP.animPos && APP.animPos[s.sid] !== undefined;
+                var ap = animating ? APP.animPos[s.sid] : s.pos;
+                var seenDuringTrail = animating && APP.animVis && APP.animVis.has(ap);
+                if (fogTeam && s.team !== fogTeam && !vis.has(ap) && !seenDuringTrail) return;
                 out += pieceSvg(s.team, s.role, s.name, ap, s.sid, s.wp);
             });
         }
