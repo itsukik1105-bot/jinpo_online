@@ -245,6 +245,27 @@ body.gameScreen #hint{bottom:calc(58px + env(safe-area-inset-bottom))}
   .slotRow label{min-width:44px}
   .wpNote{font-size:11px}
 }
+/* レア度バッジ */
+.rar{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.5px;border-radius:4px;padding:1px 5px;margin-right:5px;vertical-align:1px}
+.rar.UR{background:linear-gradient(90deg,#f5d36b,#e87bd0,#7fb0e8);color:#1a1a1a}
+.rar.SSR{background:#e8c25a;color:#1a1a1a}
+.rar.SR{background:#9aa9c9;color:#14171b}
+.rar.R{background:#3a434e;color:#d7dde4}
+.wpRef h5{margin:12px 0 2px;font-size:12px;color:var(--mut);letter-spacing:2px}
+/* 装備一覧 */
+#eqBody{overflow-y:auto;max-height:70vh}
+.eqTeam{margin:6px 0 12px}
+.eqTeam h4{margin:4px 0 6px;font-size:13px}
+.eqRow{display:flex;gap:8px;align-items:baseline;padding:6px 2px;border-top:1px solid var(--line);font-size:12.5px}
+.eqRow .who{min-width:74px;font-weight:700}
+.eqRow .what{flex:1}
+.eqRow .st{font-size:11px;color:var(--mut);white-space:nowrap}
+.eqRow.dead{opacity:.45}
+.eqRow.dead .who{text-decoration:line-through}
+/* 村上の宣言 */
+#pakuriBody .pk{display:block;width:100%;text-align:left;margin:6px 0;padding:10px 12px;line-height:1.45}
+#pakuriBody .pk .ds{display:block;font-size:11.5px;color:#c6cdd5;margin-top:3px}
+#pakuriBody .own{font-size:11px;color:var(--mut)}
 </style>
 </head>
 <body>
@@ -379,6 +400,10 @@ body.gameScreen #hint{bottom:calc(58px + env(safe-area-inset-bottom))}
     <button id="cpuFC" data-act="cpu-first-cpu" class="on">AI（推奨）</button>
     <button id="cpuFK" data-act="cpu-first-coin">🪙 コイントス</button>
   </div>
+  <div class="opt"><span>AIの装備</span>
+    <button id="cpuAA" data-act="cpu-aipick-auto" class="on">おまかせ</button>
+    <button id="cpuAM" data-act="cpu-aipick-manual">自分で決める</button>
+  </div>
   <div class="opt"><span>AIの強さ</span>
     <button id="cpuL1" data-act="cpu-lv-weak">よわい</button>
     <button id="cpuL2" data-act="cpu-lv-strong" class="on">つよい</button>
@@ -430,6 +455,18 @@ body.gameScreen #hint{bottom:calc(58px + env(safe-area-inset-bottom))}
   <div class="modalCard logCard">
     <div class="modalHead"><strong>ログ</strong><button data-act="log-close" class="ghost">閉じる</button></div>
     <div id="logEl"></div>
+  </div>
+</div>
+<div id="eqModal" class="modal hidden">
+  <div class="modalCard logCard">
+    <div class="modalHead"><strong>装備一覧（両軍）</strong><button data-act="eq-close" class="ghost">閉じる</button></div>
+    <div id="eqBody"></div>
+  </div>
+</div>
+<div id="pakuriModal" class="modal hidden">
+  <div class="modalCard logCard">
+    <div class="modalHead"><strong>🪞 パクリ大国代表村上：コピー先の宣言</strong></div>
+    <div id="pakuriBody"></div>
   </div>
 </div>
 
@@ -730,79 +767,99 @@ function freeRoster(L) { return rosterOf(L).filter(function(m) { return !m.fixed
 function sexJP(s) { return s === 'F' ? '女' : '男'; }
 
 /* ===== 装備品 =====
-   team : null=全チーム共通 / 'A'|'B'|'C'=そのチーム専用
-   only : その個人しか装備できない専用武器
-   kind : passive=常時 / active=任意発動 / reactive=条件発動 / flavor=盤面効果なし
-   once : 1ゲーム1回のみ */
+   rarity : UR / SSR / SR / R
+   kind   : passive=常時 / active=任意発動 / reactive=条件発動 / copy=他の武器をコピー
+   once   : 1ゲーム1回のみ
+   target : 発動時に選ぶもの（'enemy'=見えている敵 / 'allyF'=味方の女子 / 'room'=部屋 / 'square'=移動先）
+   declare: 前のターンに宣言が必要
+   チーム・個人による装備制限はありません（誰でも装備可能） */
+const RARITY_ORDER = { UR: 0, SSR: 1, SR: 2, R: 3 };
 const WEAPONS = [
-    { id: 'funnel',    name: 'ファンネル石井',             team: 'A', only: '石井',   kind: 'active',   once: true,
-      desc: '自らを生贄に捧げ、敵の駒1人を無作為に撃破する。1ゲームに1回のみ。' },
-    { id: 'zutai',     name: '図体のでかい関原',           team: 'B', only: '関原',   kind: 'passive',
-      desc: '関原が場にいる限り味方全員の行動マス+1。関原が倒されると、以後ゲーム終了まで味方全員-2。' },
-    { id: 'hardgel',   name: '小野寺のハードジェル',       team: 'C', only: '小野寺', kind: 'active',   once: true,
-      desc: '見えている敵のオールバックでない駒（＝女）1人を、1ターン行動不能にする。' },
-    { id: 'fuhou',     name: '村上の不法滞在',             team: 'A', kind: 'active',   once: true,
-      desc: '潜伏所にいる敵を全員、隣の通路へ強制的に追い出す。1ゲームに1回のみ。' },
-    { id: 'maeba',     name: '平井の人造前歯',             team: 'C', kind: 'active',   uses: 2,
-      desc: 'ゲーム中2回まで。廊下で発動し、同じ階・同じ縦列の任意の廊下マスへ一気に移動できる。進路上の敵は撃破。' },
-    { id: 'kusaidama', name: '門間の臭い玉',               team: 'B', kind: 'passive',
-      desc: '敵のメガホン以外の駒は、この駒の周囲1マスに入れない。' },
-    { id: 'moonwalk',  name: 'ヒロフミのムーンウォーク',   team: 'A',                 kind: 'passive',
-      desc: 'この駒の行動マスが常に+2される。' },
-    { id: 'phoenix',   name: '桃子のフェニックス',         team: 'B',                 kind: 'reactive', once: true,
-      desc: '味方が撃破されたその瞬間に限り、その味方を自陣の本殿で復活させられる。' },
-    { id: 'jikkyou',   name: '形上の名実況',               team: 'C',                 kind: 'flavor',
-      desc: '常にチーム全員でグループ通話が可能（盤面上の効果はありません）。' },
-    { id: 'onnabancho',name: 'ユウカの女番長',             team: 'A',                 kind: 'passive',
-      desc: '味方の【女】の行動マス+1、敵の【女】の行動マス-1。' },
-    { id: 'sennichi',  name: '江口の千日計画',             team: 'B',                 kind: 'passive',
-      desc: '第9ラウンドまでこの駒の行動マスは1。第10ラウンドから10になる。' },
-    { id: 'daichari',  name: '中村のダイチャリ',           team: 'C',                 kind: 'active',   once: true,
-      desc: '見えている敵1人を、その敵の進行方向または逆方向へ強制的に5マス移動させる。潜伏中の敵には効かない。' },
-    { id: 'virgin',    name: '前田のヴァージンロード',     team: 'A',                 kind: 'passive',
-      desc: '同じ通りの同じ列で、この駒の正面（敵陣側）にいる敵の【男】の行動マス-2。' },
-    { id: 'gakureki',  name: '西尾の学歴コンプ',           team: 'B',                 kind: 'active',   once: true,
-      desc: '発動した次の相手ターン、石井・内藤・小野寺・川名以外は行動できなくなる。' },
-    { id: 'comic',     name: '金澤&ノノカのコミックパワー',team: 'C',                 kind: 'active',   once: true,
-      desc: '前ターンに宣言が必要。次の自分のターン、この駒と同じ通りにいる全員を敵味方問わず撃破。潜伏中も対象。旗持ち・メガホンは対象外。' },
-    { id: 'charisma',  name: '山下の自称カリスマ',         team: 'A',                 kind: 'passive',
-      desc: '味方全員の行動マス+1、敵全員の行動マス-1。' },
-    { id: 'chinbo',    name: '吉岡の珍棒',                 team: 'B',                 kind: 'passive',
-      desc: '移動時、通過した各マスの周囲1マスにも攻撃が及ぶ。' },
-    { id: 'kusanagi',  name: '草薙剣',                     team: 'C',                 kind: 'passive',
-      desc: 'ゲーム開始時から暗幕・潜伏所の扉・X/Y間の壁を破壊し、潜伏所を全開示する。この駒の行動マス+1。' }
+    { id: 'iincho',    rarity: 'UR',  name: '委員長の威厳',                 kind: 'passive',
+      desc: '相手は自分の周り1マスに近づけない。ただしメガホンのみ近づくことが可能。' },
+    { id: 'pakuri',    rarity: 'SSR', name: 'パクリ大国代表村上',           kind: 'copy',
+      desc: 'この試合で誰かが装備している武器を1つコピーして使用できる。試合開始前にコピー先を宣言する。' },
+    { id: 'maeba',     rarity: 'SSR', name: '平井の人造前歯',               kind: 'active',   declare: true, target: 'square',
+      desc: '使用する前のターンに宣言が必要。宣言した次の自分のターン、相手陣地に向かって同じ縦列を何マスでも一気に進める。進路上の敵は撃破。何度でも使える。' },
+    { id: 'iemuri',    rarity: 'SSR', name: 'ごめん今日家無理だわ',         kind: 'active',   once: true,
+      desc: '発動すると、潜伏している敵プレイヤーが全員死亡する。1ゲームに1回のみ。' },
+    { id: 'aga',       rarity: 'SR',  name: '江口のAGA治療薬',              kind: 'reactive',
+      desc: '殺された時、この装備と殺したキャラの装備を交換する。受け取った相手は外せず、受け渡された後は何の効力もないカードになる。' },
+    { id: 'daichari',  rarity: 'SR',  name: '中村のダイチャリ',             kind: 'active',   once: true, target: 'enemy',
+      desc: '見えている相手1人を、強制的に5マス前進させる。潜伏中の相手には効かない。1ゲームに1回のみ。' },
+    { id: 'charisma',  rarity: 'SR',  name: '自称カリスマ山下',             kind: 'passive',
+      desc: '味方チームの全てのプレイヤーの行動マスを常に+1する。' },
+    { id: 'ikkun',     rarity: 'SR',  name: '八つ当たりいっくん',           kind: 'reactive',
+      desc: 'この駒が取られた時、取った相手の駒も道連れにする。' },
+    { id: 'shuchi',    rarity: 'SR',  name: '酒池クニ林',                   kind: 'active',   once: true, target: 'allyF',
+      desc: '味方の女子1人を、自分の縦横1マス隣にワープさせる。1ゲームに1回のみ。' },
+    { id: 'funnel',    rarity: 'R',   name: 'ファンネル石井',               kind: 'active',   once: true,
+      desc: '自らを生贄に捧げ、相手の駒1人を無作為に撃破する。抽選には3枚のハズレが含まれ、ハズレでも自分は消滅する。1ゲームに1回のみ。' },
+    { id: 'zutai',     rarity: 'R',   name: '図体のでかい関原',             kind: 'passive',
+      desc: 'この駒の行動マスが+2される。ただしこの駒が倒されると、味方の行動マスはゲーム終了まで-1される。' },
+    { id: 'hardgel',   rarity: 'R',   name: '小野寺のハードジェル',         kind: 'active',   once: true, target: 'enemy',
+      desc: '選んだ相手の駒を1ターン行動不能にする。1ゲームに1回のみ。' },
+    { id: 'moonwalk',  rarity: 'R',   name: '垂見のムーンウォーク',         kind: 'passive',
+      desc: 'この駒の行動マスが常に+1される。' },
+    { id: 'phoenix',   rarity: 'R',   name: '桃子のフェニックス',           kind: 'reactive', once: true,
+      desc: '自分が撃破されたその瞬間に限り、自分を本陣（P5・P6 または Q5・Q6）で復活させる。1ゲームに1回のみ。' },
+    { id: 'toyoko',    rarity: 'R',   name: '形上の東横INN',                kind: 'reactive', once: true,
+      desc: '自分が潜伏している部屋の前1マスを相手が通った時、その相手を部屋に連れ込み死亡させる。1ゲームに1回のみ。' },
+    { id: 'onnabancho',rarity: 'R',   name: 'ユウカの女番長',               kind: 'passive',
+      desc: '相手チームの女の行動マスを-1する。' },
+    { id: 'virgin',    rarity: 'R',   name: '前田のヴァージンロード',       kind: 'passive',
+      desc: 'この駒の正面（同じ通り・同じ縦列の相手陣地側）にいる相手の男は、行動マスが-2される。' },
+    { id: 'nonoka',    rarity: 'R',   name: 'ファイナルノノカエクスプロージョン', kind: 'active', once: true, declare: true,
+      desc: '宣言した1ターン後、自分の死と引き換えに、同じ通り（AとB／CとD）にいる潜伏していない全てのプレイヤーを敵味方問わず破壊する。宣言後は行動できない。1ゲームに1回のみ。' },
+    { id: 'chinbo',    rarity: 'R',   name: '吉岡の珍棒',                   kind: 'passive',
+      desc: 'この駒が行動する時、対象が女の場合に限り、周囲1マスまで攻撃が届く。' },
+    { id: 'ogoru',     rarity: 'R',   name: 'ああ、ここは俺が奢るわ',       kind: 'active',   once: true,
+      desc: '自分チームの80期の行動マスを、このターンだけ+1する。1ゲームに1回のみ。' },
+    { id: 'shinasadame', rarity: 'R', name: '品定め',                       kind: 'active',   once: true, target: 'room',
+      desc: '好きな部屋（潜伏所T1〜T16・大部屋X・Y）を1つ選び、そこに誰がいるかを確認できる。1ゲームに1回のみ。' }
 ];
 const WP = {};
 WEAPONS.forEach(function(w) { WP[w.id] = w; });
+/* 【ファンネル石井】の抽選に混ぜるハズレの枚数 */
+const FUNNEL_BLANKS = 3;
+
+/* 駒が実際に使う武器ID。
+   ・【パクリ大国代表村上】はコピー先の武器として振る舞う
+   ・【江口のAGA治療薬】を押し付けられた駒は効果なし */
+function effWp(s) {
+    if (!s || !s.wp || s.agaDud) return null;
+    if (s.wp === 'pakuri') return s.copy || null;
+    return s.wp;
+}
+function hasWp(s, id) { return !!(s && s.alive && effWp(s) === id); }
+
+/* 使用回数は駒ごとに数える（村上のコピーで同じ武器が2つになっても干渉しない） */
 function weaponUseLimit(w) { return w ? (w.uses || (w.once ? 1 : 0)) : 0; }
-function weaponUsedCount(g, team, id) {
-    var v = g && g.used && g.used[team] ? g.used[team][id] : 0;
-    return (typeof v === 'number') ? v : (v ? 1 : 0);
+function weaponUsedCount(s, id) {
+    return (s && s.uses && s.uses[id]) || 0;
 }
-function weaponSpent(g, team, w) {
+function weaponSpent(s, w) {
     var limit = weaponUseLimit(w);
-    return !!(limit && weaponUsedCount(g, team, w.id) >= limit);
+    return !!(limit && weaponUsedCount(s, w.id) >= limit);
 }
-function markWeaponUsed(g, team, id) {
-    g.used[team][id] = weaponUsedCount(g, team, id) + 1;
+function markWeaponUsed(s, id) {
+    if (!s.uses) s.uses = {};
+    s.uses[id] = weaponUsedCount(s, id) + 1;
 }
 function wpName(id) { return (WP[id] && WP[id].name) || ''; }
-/* 通称つきの表示名： 村上の不法滞在（でっかい鍵） */
-function wpFull(id) {
-    var w = WP[id];
-    if (!w) return '';
-    return w.name + (w.alias ? '（' + w.alias + '）' : '');
+function wpFull(id) { return wpName(id); }
+/* 駒の装備の表示名（コピー中・効果なしも含めて説明的に） */
+function wpLabelOf(s) {
+    if (!s || !s.wp) return '装備なし';
+    if (s.agaDud) return wpName('aga') + '（効果なし）';
+    if (s.wp === 'pakuri') return wpName('pakuri') + (s.copy ? '→' + wpName(s.copy) : '（コピー未宣言）');
+    return wpName(s.wp);
 }
-/* 【西尾の学歴コンプ】の適用除外者 */
-const GAKUREKI_FREE = ['石井', '内藤', '小野寺', '川名'];
 
-/* チーム L の人物 m が装備できる武器一覧 */
+/* 誰でもどの武器でも装備できる（チーム・個人の制限なし） */
 function weaponsFor(L, m) {
     if (!m) return [];
-    return WEAPONS.filter(function(w) {
-        if (w.only) return w.only === m.name;
-        return (w.team === null || w.team === L);
-    });
+    return WEAPONS.slice();
 }
 
 /* ===== 通り（フロア）判定 ===== */
@@ -913,12 +970,64 @@ const RULES = (function() {
                 if (!WP[p.wp]) return '不正な装備品';
                 if (seenWp[p.wp]) return wpName(p.wp) + ' を2人が装備しています（武器は1個ずつ）';
                 seenWp[p.wp] = true;
-                if (!weaponsFor(L, m).some(function(w) { return w.id === p.wp; }))
-                    return m.name + ' は ' + wpName(p.wp) + ' を装備できません';
             }
         }
         if (roles.soldier !== 6 || roles.mega !== 1 || roles.flag !== 1) return '内訳は プレイヤー6・📣1・🚩1 にしてください';
         return null;
+    }
+
+    /* 両軍の装備一覧（誰が何を持っているかは公開情報） */
+    function loadout(g, team) {
+        return g.soldiers.filter(function(s) { return s.team === team; }).map(function(s) {
+            const e = effWp(s);
+            const w = e ? WP[e] : null;
+            return {
+                sid: s.sid, name: s.name, role: s.role, alive: s.alive,
+                wp: s.wp, label: wpLabelOf(s),
+                rarity: s.wp && WP[s.wp] ? WP[s.wp].rarity : '',
+                spent: !!(w && weaponSpent(s, w)),
+                armed: !!(s.nonokaArmed || s.maebaDeclared || s.maebaReady)
+            };
+        });
+    }
+    function loadoutLine(g, team) {
+        const eq = g.soldiers.filter(function(s) { return s.team === team && s.wp; });
+        if (!eq.length) return '📋 ' + JPN[team] + '（チーム' + g.letters[team] + '）の装備：なし';
+        return '📋 ' + JPN[team] + '（チーム' + g.letters[team] + '）の装備：' +
+            eq.map(function(s) { return s.name + roleGlyph(s.role) + '＝' + wpName(s.wp); }).join('、');
+    }
+
+    /* 【パクリ大国代表村上】でコピーできる武器：この試合で誰かが装備している武器 */
+    function pakuriChoices(g) {
+        const out = [];
+        g.soldiers.forEach(function(s) {
+            if (s.wp && s.wp !== 'pakuri' && out.indexOf(s.wp) < 0) out.push(s.wp);
+        });
+        return out.sort(function(a, b) { return RARITY_ORDER[WP[a].rarity] - RARITY_ORDER[WP[b].rarity]; });
+    }
+    /* いまコピー先の宣言を待っている村上（先攻側から順に1人ずつ） */
+    function pendingPakuri(g) {
+        const q = g.pakuriPending || [];
+        return q.length ? getS(g, q[0]) : null;
+    }
+    function declarePakuri(g, sid, wpId) {
+        const s = pendingPakuri(g);
+        if (!s || s.sid !== sid) return { ok: false, err: 'いまはその駒の宣言番ではありません' };
+        if (pakuriChoices(g).indexOf(wpId) < 0) return { ok: false, err: 'その武器はこの試合で誰も装備していません' };
+        s.copy = wpId;
+        g.pakuriPending.shift();
+        g.log.push('🪞 パクリ大国代表村上：' + plbl(s) + ' は【' + wpName(wpId) + '】をコピーした');
+        /* 宣言が済んだら、手番側の行動マスを計算し直す（まだ誰も動いていない） */
+        if (!g.pakuriPending.length) {
+            g.soldiers.forEach(function(o) {
+                if (o.alive && o.team === g.activeTeam && !o.frozen) o.steps = stepsFor(g, o);
+            });
+        }
+        trimLog(g);
+        return { ok: true };
+    }
+    function blockedByPakuri(g) {
+        return (g.pakuriPending && g.pakuriPending.length) ? { ok: false, err: '試合開始前の「村上のコピー先の宣言」を待っています' } : null;
     }
 
     function newGame(placeBlue, placeRed, firstTeam, letters) {
@@ -933,7 +1042,9 @@ const RULES = (function() {
                     sid: pre + n, team: team, role: p.role, num: n, pos: p.pos,
                     alive: true, steps: 0, locked: false,
                     name: m.name, year: m.year, sex: m.sex, wp: p.wp || null,
-                    stun: false, comicDeclared: false, comicReady: false
+                    copy: null, agaDud: false, uses: {},
+                    stun: false, frozen: false,
+                    maebaDeclared: false, maebaReady: false, nonokaArmed: false
                 });
             });
         }
@@ -944,22 +1055,29 @@ const RULES = (function() {
             crossed: { 1: false, 2: false },
             letters: letters,
             trail: [], trailSeq: 0,
-            used: { blue: {}, red: {} },
-            zutaiDown: { blue: false, red: false },
+            zutaiDown: { blue: 0, red: 0 },
             revealT: { blue: [], red: [] },
-            gakureki: null,
+            pakuriPending: [],
             soldiers: soldiers, winner: null, winLines: [],
             log: ['▶ ゲーム開始　先攻: ' + JPN[firstTeam] +
                   '　／　' + JPN['blue'] + '＝チーム' + letters.blue + '　' + JPN['red'] + '＝チーム' + letters.red],
             turnStartedAt: Date.now()
         };
-        if (soldiers.some(function(s) { return s.wp === 'kusanagi'; })) {
-            const hideouts = Object.values(SQ).filter(function(q) { return q.kind === 'T'; }).map(function(q) { return q.id; });
-            g.kusanagiOpen = true;
-            g.crossed = { 1: true, 2: true };
-            g.revealT.blue = hideouts.slice();
-            g.revealT.red = hideouts.slice();
-            g.log.push('🗡 草薙剣の効果で、開始時から暗幕と潜伏所の扉が破壊された');
+        g.log.push(loadoutLine(g, 'blue'));
+        g.log.push(loadoutLine(g, 'red'));
+        /* 村上のコピー宣言は、先攻側 → 後攻側 の順に行う */
+        [firstTeam, OTHER[firstTeam]].forEach(function(t) {
+            soldiers.forEach(function(s) { if (s.team === t && s.wp === 'pakuri') g.pakuriPending.push(s.sid); });
+        });
+        if (g.pakuriPending.length) {
+            if (!pakuriChoices(g).length) {
+                g.pakuriPending.forEach(function(sid) {
+                    g.log.push('🪞 ' + plbl(getS(g, sid)) + ' の村上：コピーできる武器がこの試合にない');
+                });
+                g.pakuriPending = [];
+            } else {
+                g.log.push('🪞 試合開始前に、パクリ大国代表村上のコピー先を宣言してください');
+            }
         }
         beginTurn(g);
         return g;
@@ -967,55 +1085,54 @@ const RULES = (function() {
 
     /* ===== 行動マス数の算出 =====
        ・常時効果は「装備者が生存している間だけ」有効
-       ・例外: 【図体のでかい関原】は撃破後、自軍に -2 の永続ペナルティ */
-    function baseSteps(g, s) {
-        if (s.wp === 'sennichi') return (Math.ceil(g.turn / 2) <= 9) ? 1 : 10;
-        return (s.role === 'mega') ? 6 : 4;
-    }
-    /* 【前田のヴァージンロード】: 同じ通り・同じ列で、装備者の正面（敵陣側）にいるか */
+       ・例外: 【図体のでかい関原】の装備者が倒れると、味方は以後ずっと -1 */
     function virginHit(g, s) {
         if (s.sex !== 'M') return false;
         const a = corrIndex(s.pos);
         if (!a) return false;
         return g.soldiers.some(function(o) {
-            if (!o.alive || o.team === s.team || o.wp !== 'virgin') return false;
+            if (!o.alive || o.team === s.team || effWp(o) !== 'virgin') return false;
             const b = corrIndex(o.pos);
             if (!b || b.floor !== a.floor || b.col !== a.col) return false;
             return (a.idx - b.idx) * forwardSign(o.team) > 0;
         });
     }
     function stepsFor(g, s) {
-        let v = baseSteps(g, s);
-        if (s.wp === 'moonwalk') v += 2;
-        if (s.wp === 'kusanagi') v += 1;
+        let v = (s.role === 'mega') ? 6 : 4;
+        const e = effWp(s);
+        if (e === 'moonwalk') v += 1;
+        if (e === 'zutai') v += 2;
         g.soldiers.forEach(function(o) {
             if (!o.alive) return;
+            const oe = effWp(o);
             const ally = (o.team === s.team);
-            if (o.wp === 'charisma') v += ally ? 1 : -1;
-            if (o.wp === 'onnabancho' && s.sex === 'F') v += ally ? 1 : -1;
-            if (o.wp === 'zutai' && ally) v += 1;
+            if (oe === 'charisma' && ally) v += 1;
+            if (oe === 'onnabancho' && !ally && s.sex === 'F') v -= 1;
         });
-        if (g.zutaiDown && g.zutaiDown[s.team]) v -= 2;
+        v -= Number((g.zutaiDown && g.zutaiDown[s.team]) || 0);
         if (virginHit(g, s)) v -= 2;
         return Math.max(0, v);
     }
 
     function beginTurn(g) {
         const team = g.activeTeam;
-        const locked = !!(g.gakureki && g.gakureki.target === team && g.gakureki.turn === g.turn);
+        g.log.push('― 第' + Math.ceil(g.turn / 2) + 'ラウンド ' + JPN[g.activeTeam] + 'のターン ―');
+        g.trail = [];
+        g.turnStartedAt = Date.now();
+        g.soldiers.forEach(function(s) { s.frozen = false; });
+        /* 【ファイナルノノカエクスプロージョン】宣言した側の次のターン開始時に起爆 */
+        g.soldiers.forEach(function(s) {
+            if (s.alive && s.team === team && s.nonokaArmed) detonateNonoka(g, s);
+        });
+        if (g.phase !== 'play') { trimLog(g); return; }
         g.soldiers.forEach(function(s) {
             if (s.team !== team || !s.alive) return;
             s.steps = stepsFor(g, s);
             s.locked = false;
-            s.comicReady = !!s.comicDeclared;
-            s.comicDeclared = false;
-            if (s.stun) { s.stun = false; s.steps = 0; }
-            if (locked && GAKUREKI_FREE.indexOf(s.name) < 0) s.steps = 0;
+            s.maebaReady = !!s.maebaDeclared;
+            s.maebaDeclared = false;
+            if (s.stun) { s.stun = false; s.steps = 0; s.frozen = true; }
         });
-        if (locked) g.log.push('📕 西尾の学歴コンプ発動中！ ' + JPN[team] + 'は ' + GAKUREKI_FREE.join('・') + ' 以外行動できない');
-        g.log.push('― 第' + Math.ceil(g.turn / 2) + 'ラウンド ' + JPN[g.activeTeam] + 'のターン ―');
-        g.trail = [];
-        g.turnStartedAt = Date.now();
         trimLog(g);
     }
     /* 移動の軌跡を1歩ぶん記録する（相手側の画面で経路アニメーションに使う） */
@@ -1025,134 +1142,193 @@ const RULES = (function() {
         g.trail.push({ q: g.trailSeq, sid: s.sid, from: from, to: to });
         if (g.trail.length > 80) g.trail = g.trail.slice(-80);
     }
+    function setPop(g, wpId, s, detail) {
+        g.pop = { seq: (g.popSeq = (g.popSeq || 0) + 1), wp: wpId, by: s.team, name: s.name, detail: detail || '' };
+    }
 
     /* ===== 撃破処理 =====
-       ・【図体のでかい関原】の死亡ペナルティ
-       ・【桃子のフェニックス】による復活（1ゲーム1回）
+       opts.killer   : 撃破した駒（いっくん・AGA治療薬の判定に使う）
+       opts.noRevive : フェニックスによる復活を認めない
        戻り値 true=撃破成立 / false=復活したので撃破は成立せず */
-    function killPiece(g, foe, msg, noRevive) {
-        foe.alive = false;
+    function killPiece(g, v, msg, opts) {
+        opts = opts || {};
+        const killer = opts.killer || null;
+        const ve = effWp(v);
+        v.alive = false;
+        v.nonokaArmed = false;
         g.log.push(msg);
-        if (foe.wp === 'zutai' && !g.zutaiDown[foe.team]) {
-            g.zutaiDown[foe.team] = true;
-            g.log.push('💥 ' + foe.name + ' 戦死。以後ゲーム終了まで' + JPN[foe.team] + '全員の行動マス -2');
+        if (ve === 'zutai') {
+            g.zutaiDown[v.team] = Number(g.zutaiDown[v.team] || 0) + 1;
+            g.log.push('💥 図体のでかい関原を持つ ' + v.name + ' が倒れた。以後ゲーム終了まで' + JPN[v.team] + '全員の行動マス -1');
         }
-        if (foe.role === 'flag') return true;
-        if (!noRevive) {
-            const ph = g.soldiers.filter(function(o) { return o.alive && o.team === foe.team && o.wp === 'phoenix'; })[0];
-            if (ph && !g.used[foe.team].phoenix) {
-                const home = (foe.team === 'blue') ? ['P5', 'P6'] : ['Q5', 'Q6'];
-                const free = home.filter(function(id) { return !soldierAt(g, id); });
-                if (free.length) {
-                    g.used[foe.team].phoenix = true;
-                    foe.alive = true; foe.pos = free[0]; foe.steps = 0; foe.locked = true;
-                    g.log.push('🔥 桃子のフェニックス発動！ ' + plbl(foe) + ' が本殿 ' + free[0] + ' で復活');
-                    return false;
-                }
+        /* 【桃子のフェニックス】自分自身を本陣で復活（旗持ちの撃破は復活不可＝その時点で決着） */
+        if (ve === 'phoenix' && !opts.noRevive && v.role !== 'flag' && !weaponSpent(v, WP.phoenix)) {
+            const home = (v.team === 'blue') ? ['P5', 'P6'] : ['Q5', 'Q6'];
+            const free = home.filter(function(id) { return !soldierAt(g, id); });
+            if (free.length) {
+                markWeaponUsed(v, 'phoenix');
+                v.alive = true; v.pos = free[0]; v.steps = 0; v.locked = true;
+                setPop(g, 'phoenix', v, v.name + ' が本陣 ' + free[0] + ' で復活');
+                g.log.push('🔥 桃子のフェニックス発動！ ' + plbl(v) + ' が本陣 ' + free[0] + ' で復活');
+                return false;
             }
+        }
+        /* 【江口のAGA治療薬】殺したキャラと装備を交換。押し付けられた側は効果なし */
+        if (ve === 'aga' && killer && killer.alive && killer.team !== v.team) {
+            const took = wpLabelOf(killer);
+            const hadWp = killer.wp;
+            v.wp = hadWp; v.copy = killer.copy; v.agaDud = !!killer.agaDud;
+            killer.wp = 'aga'; killer.copy = null; killer.agaDud = true;
+            killer.maebaDeclared = false; killer.maebaReady = false;
+            setPop(g, 'aga', v, killer.name + ' の装備が効果なしのAGA治療薬に');
+            g.log.push('💊 江口のAGA治療薬！ ' + plbl(killer) + ' の【' + took + '】が、効果のないAGA治療薬と入れ替わった');
+        }
+        /* 【八つ当たりいっくん】取った相手も道連れ */
+        if (ve === 'ikkun' && killer && killer.alive && killer.team !== v.team) {
+            setPop(g, 'ikkun', v, killer.name + ' を道連れ');
+            killPiece(g, killer, '💢 八つ当たりいっくん！ ' + plbl(killer) + ' も道連れに撃破された', { killer: null });
         }
         return true;
     }
-    /* 【門間の臭い玉】: 装備者の周囲1マスへは、敵のメガホン以外は進入できない */
-    function kusaiBlocked(g, s, to) {
+    /* 【委員長の威厳】装備者の周囲1マスへは、相手のメガホン以外は近づけない */
+    function iinchoBlocked(g, s, to) {
         if (s.role === 'mega') return false;
         return g.soldiers.some(function(o) {
-            return o.alive && o.team !== s.team && o.wp === 'kusaidama' && adjacentSquares(g, to).indexOf(o.pos) >= 0;
+            return o.alive && o.team !== s.team && effWp(o) === 'iincho' && adjacentSquares(g, to).indexOf(o.pos) >= 0;
         });
     }
-    /* 【吉岡の珍棒】: 移動先の周囲1マスにも攻撃が及ぶ（囲われた潜伏所・大部屋は対象外） */
-    function splashAttack(g, s, kills) {
-        if (s.wp !== 'chinbo' || !s.alive) return;
+    /* 【吉岡の珍棒】移動先の周囲1マスにいる相手の女にも攻撃が届く（囲われた潜伏所・大部屋は対象外） */
+    function splashAttack(g, s) {
+        if (!hasWp(s, 'chinbo')) return;
         adjacentSquares(g, s.pos).forEach(function(nb) {
             const k = SQ[nb].kind;
             if (k === 'T' || k === 'room') return;
-            const foe = enemyAt(g, nb, s.team);
-            if (foe && killPiece(g, foe, '⚔ 吉岡の珍棒の間合い！ ' + plbl(foe) + ' が ' + nb + ' で撃破された')) kills.push(foe);
+            const v = enemyAt(g, nb, s.team);
+            if (v && v.sex === 'F') killPiece(g, v, '⚔ 吉岡の珍棒の間合い！ ' + plbl(v) + ' が ' + nb + ' で撃破された', { killer: s });
         });
     }
-    function checkWins(g, s, to, kills) {
+    /* 【形上の東横INN】潜伏している部屋の前1マス（扉）に相手が入ったら、連れ込んで死亡させる */
+    function toyokoTrap(g, mover, sq) {
+        if (!mover.alive) return false;
+        const h = g.soldiers.filter(function(o) {
+            return o.alive && o.team !== mover.team && effWp(o) === 'toyoko' && !weaponSpent(o, WP.toyoko) &&
+                SQ[o.pos].kind === 'T' && SQ[o.pos].door === sq;
+        })[0];
+        if (!h) return false;
+        markWeaponUsed(h, 'toyoko');
+        setPop(g, 'toyoko', h, mover.name + ' を ' + h.pos + ' に連れ込んだ');
+        killPiece(g, mover, '🏨 形上の東横INN！ ' + plbl(mover) + ' が ' + h.pos + ' に連れ込まれ死亡した', { killer: h });
+        return true;
+    }
+    /* 決着判定（どちらの勝ちも判定する） */
+    function gdraw(g, reason) {
+        g.winner = null;
+        g.phase = 'over';
+        g.winLines = ['引き分け', reason];
+        g.log.push('🤝 引き分け ― ' + reason);
+    }
+    function resolveWins(g) {
         if (g.phase !== 'play') return;
-        if (kills.some(function(k) { return k.role === 'flag'; }) ||
-            g.soldiers.some(function(o) { return !o.alive && o.team === OTHER[s.team] && o.role === 'flag'; })) {
-            gwin(g, s.team, '敵の🚩旗持ちを撃破');
-            return;
+        const flagDown = function(t) { return g.soldiers.some(function(o) { return o.team === t && o.role === 'flag' && !o.alive; }); };
+        const bF = flagDown('blue'), rF = flagDown('red');
+        if (bF && rF) { gdraw(g, '両軍の🚩旗持ちが同時に倒れた'); return; }
+        if (bF) { gwin(g, 'red', '青の🚩旗持ちを撃破'); return; }
+        if (rF) { gwin(g, 'blue', '赤の🚩旗持ちを撃破'); return; }
+        for (const o of g.soldiers) {
+            const q = SQ[o.pos];
+            if (o.alive && q && q.kind === 'honden' && q.team !== o.team) { gwin(g, o.team, plbl(o) + ' が敵の本殿 ' + o.pos + ' に到達'); return; }
         }
-        const q = to ? SQ[to] : null;
-        if (q && q.kind === 'honden' && q.team !== s.team) { gwin(g, s.team, plbl(s) + ' が敵の本殿 ' + to + ' に到達'); return; }
-        if (kills.length && aliveCount(g, OTHER[s.team]) === 0) gwin(g, s.team, '敵チームを全滅させた');
+        const b = aliveCount(g, 'blue'), r = aliveCount(g, 'red');
+        if (!b && !r) { gdraw(g, '両軍全滅'); return; }
+        if (!b) { gwin(g, 'red', '敵チームを全滅させた'); return; }
+        if (!r) { gwin(g, 'blue', '敵チームを全滅させた'); return; }
+    }
+    /* 行動できる駒か（共通チェック） */
+    function canActPiece(g, s) {
+        if (g.phase !== 'play') return { ok: false, err: 'ゲームは進行中ではありません' };
+        const pk = blockedByPakuri(g);
+        if (pk) return pk;
+        if (!s || !s.alive) return { ok: false, err: 'その駒は動かせません' };
+        if (s.team !== g.activeTeam) return { ok: false, err: '相手のターンです' };
+        if (s.frozen) return { ok: false, err: 'ハードジェルで固められていて、このターンは行動できません' };
+        if (s.nonokaArmed) return { ok: false, err: 'ノノカエクスプロージョンを宣言したので行動できません' };
+        return null;
     }
 
     /* 1歩進める。戻り値 {ok:true} か {ok:false,err} */
     function stepMove(g, sid, to) {
-        if (g.phase !== 'play') return { ok: false, err: 'ゲームは進行中ではありません' };
         const s = getS(g, sid);
-        if (!s || !s.alive) return { ok: false, err: 'その駒は動かせません' };
-        if (s.team !== g.activeTeam) return { ok: false, err: '相手のターンです' };
+        const bad = canActPiece(g, s);
+        if (bad) return bad;
         if (s.locked) return { ok: false, err: '潜伏所に入ったターンは動けません' };
         if (s.steps <= 0) return { ok: false, err: 'この駒の移動力は使い切りました' };
         if (adjacentSquares(g, s.pos).indexOf(to) < 0) return { ok: false, err: '隣のマスにしか進めません' };
         if (allyAt(g, to, s.team)) return { ok: false, err: '味方がいるマスへは進めません' };
-        if (kusaiBlocked(g, s, to)) return { ok: false, err: '門間の臭い玉が臭くて近づけません' };
+        if (iinchoBlocked(g, s, to)) return { ok: false, err: '委員長の威厳に気圧されて近づけません' };
         const qFrom = SQ[s.pos];
         const qTo0 = SQ[to];
         const leavingRoom = (qFrom.kind === 'T' && qTo0.kind !== 'T') || (!!qFrom.room && qFrom.room !== qTo0.room);
         if (leavingRoom && s.steps < 2) return { ok: false, err: '部屋・潜伏所から出るには2歩ぶんの移動力が必要です' };
-        const kills = [];
-        const foe = enemyAt(g, to, s.team);
-        if (foe && killPiece(g, foe, '⚔ ' + plbl(foe) + ' が ' + to + ' で撃破された')) kills.push(foe);
+        const v = enemyAt(g, to, s.team);
+        let captured = null;
+        if (v && killPiece(g, v, '⚔ ' + plbl(v) + ' が ' + to + ' で撃破された', { killer: s })) captured = v.sid;
         pushTrail(g, s, s.pos, to);
         s.pos = to;
         s.steps--;
         if (leavingRoom) s.steps--;
         const q = SQ[to];
-        if (q.kind === 'T') s.locked = true;
-        if (qFrom.kind === 'corridor' && q.kind === 'corridor' && qFrom.corridor !== q.corridor && !g.crossed[q.floor]) {
-            g.crossed[q.floor] = true;
-            g.log.push('🔶 ' + q.floor + '階の暗幕が破られた！ 以後この階では、廊下に立てば反対側の廊下まで見通せます');
+        if (s.alive) {
+            if (q.kind === 'T') s.locked = true;
+            if (qFrom.kind === 'corridor' && q.kind === 'corridor' && qFrom.corridor !== q.corridor && !g.crossed[q.floor]) {
+                g.crossed[q.floor] = true;
+                g.log.push('🔶 ' + q.floor + '階の暗幕が破られた！ 以後この階では、廊下に立てば反対側の廊下まで見通せます');
+            }
+            toyokoTrap(g, s, to);
+            splashAttack(g, s);
         }
-        splashAttack(g, s, kills);
-        checkWins(g, s, to, kills);
+        resolveWins(g);
         trimLog(g);
-        return { ok: true, captured: kills.length ? kills[0].sid : null };
+        return { ok: true, captured: captured };
     }
 
-    /* ===== 強制移動（【中村のダイチャリ】用）: 前後どちらかへ n マス ===== */
-    function forcePush(g, v, n, direction) {
-        const sign = forwardSign(v.team) * (direction === 'backward' ? -1 : 1);
+    /* ===== 強制移動（【中村のダイチャリ】）: その駒の前進方向へ n マス ===== */
+    function forcePush(g, v, n) {
+        const sign = forwardSign(v.team);
         let moved = 0;
-        for (let i = 0; i < n; i++) {
+        for (let i = 0; i < n && v.alive; i++) {
             const c = corrIndex(v.pos);
             if (!c) break;
             const nxt = corrIdToPos(c.floor, c.idx + sign, c.col);
-            if (!nxt || soldierAt(g, nxt)) break;
+            if (!nxt || soldierAt(g, nxt) || iinchoBlocked(g, v, nxt)) break;
             pushTrail(g, v, v.pos, nxt);
             v.pos = nxt; moved++;
+            toyokoTrap(g, v, nxt);
         }
         return moved;
     }
 
+    /* 【平井の人造前歯】相手陣地の方向・同じ縦列にだけ進める */
     function maebaPath(g, s, to) {
         const from = corrIndex(s.pos);
         const dest = corrIndex(to);
         if (!from) return { ok: false, err: '廊下にいる時だけ使えます' };
         if (!dest || dest.floor !== from.floor || dest.col !== from.col) return { ok: false, err: '同じ階・同じ縦列の廊下マスを選んでください' };
-        if (dest.idx === from.idx) return { ok: false, err: '現在地以外を選んでください' };
-        const dir = dest.idx > from.idx ? 1 : -1;
+        const dir = forwardSign(s.team);
+        if ((dest.idx - from.idx) * dir <= 0) return { ok: false, err: '相手陣地の方向にしか進めません' };
         const path = [];
         for (let idx = from.idx + dir; idx !== dest.idx + dir; idx += dir) {
             const nxt = corrIdToPos(from.floor, idx, from.col);
             if (!nxt) return { ok: false, err: 'そこへは移動できません' };
             if (allyAt(g, nxt, s.team)) return { ok: false, err: '味方の駒を飛び越せません' };
-            if (kusaiBlocked(g, s, nxt)) return { ok: false, err: '門間の臭い玉が臭くて通れません' };
+            if (iinchoBlocked(g, s, nxt)) return { ok: false, err: '委員長の威厳で通れません' };
             path.push(nxt);
         }
         return { ok: true, path: path };
     }
-
     function maebaTargets(g, sid) {
         const s = getS(g, sid);
         const c = s && s.alive ? corrIndex(s.pos) : null;
-        if (!c) return [];
+        if (!c || !s.maebaReady) return [];
         const out = [];
         for (let idx = 0; idx <= 29; idx++) {
             if (idx === c.idx) continue;
@@ -1161,120 +1337,18 @@ const RULES = (function() {
         }
         return out;
     }
-
-    /* ===== 任意発動の装備品 =====
-       targetSid が要るもの: hardgel（見えている敵の女）/ daichari（見えている敵）
-       maeba は targetSid の代わりに移動先マスIDを渡す */
-    function useWeapon(g, sid, targetSid, direction) {
-        if (g.phase !== 'play') return { ok: false, err: 'ゲームは進行中ではありません' };
-        const s = getS(g, sid);
-        if (!s || !s.alive) return { ok: false, err: 'その駒は行動できません' };
-        if (s.team !== g.activeTeam) return { ok: false, err: '相手のターンです' };
-        const w = WP[s.wp];
-        if (!w) return { ok: false, err: '装備品がありません' };
-        if (w.kind !== 'active') return { ok: false, err: wpName(s.wp) + ' は任意発動できません' };
-        if (weaponSpent(g, s.team, w)) return { ok: false, err: wpName(s.wp) + ' は使用済みです' };
-        const foe = OTHER[s.team];
-        const kills = [];
-        /* 画面中央のポップアップ用（クライアントが拾って表示する） */
-        g.pop = { seq: (g.popSeq = (g.popSeq || 0) + 1), wp: w.id, by: s.team, name: s.name };
-
-        if (w.id === 'funnel') {
-            const cand = g.soldiers.filter(function(o) { return o.alive && o.team === foe; });
-            if (!cand.length) return { ok: false, err: '対象がいません' };
-            const v = cand[Math.floor(Math.random() * cand.length)];
-            g.used[s.team].funnel = true;
-            g.log.push('✨ ファンネル石井発動！ ' + plbl(s) + ' が自らを生贄に捧げた');
-            killPiece(g, s, '☠ ' + plbl(s) + ' は消滅した', true);
-            if (killPiece(g, v, '🎯 無作為に選ばれた ' + plbl(v) + ' が撃破された')) kills.push(v);
-            checkWins(g, s, null, kills);
-            trimLog(g); return { ok: true };
-        }
-        if (w.id === 'hardgel') {
-            const v = getS(g, targetSid);
-            if (!v || !v.alive || v.team !== foe) return { ok: false, err: '対象の敵を選んでください' };
-            if (v.sex !== 'F') return { ok: false, err: v.name + ' はオールバック（男）なので効きません' };
-            if (!visibleSquares(g, s.team).has(v.pos)) return { ok: false, err: '見えている敵しか対象にできません' };
-            g.used[s.team].hardgel = true;
-            v.stun = true; v.steps = 0;
-            g.log.push('💈 小野寺のハードジェル！ ' + plbl(v) + ' は次のターン行動不能');
-            trimLog(g); return { ok: true };
-        }
-        if (w.id === 'daichari') {
-            const v = getS(g, targetSid);
-            if (!v || !v.alive || v.team !== foe) return { ok: false, err: '対象の敵を選んでください' };
-            if (SQ[v.pos].kind === 'T') return { ok: false, err: '潜伏中の敵には効きません' };
-            if (!corrIndex(v.pos)) return { ok: false, err: '廊下にいる敵にしか効きません' };
-            if (!visibleSquares(g, s.team).has(v.pos)) return { ok: false, err: '見えている敵しか対象にできません' };
-            const dir = direction === 'backward' ? 'backward' : 'forward';
-            g.used[s.team].daichari = true;
-            const mv = forcePush(g, v, 5, dir);
-            g.log.push('🚲 中村のダイチャリ！ ' + plbl(v) + ' を' + (dir === 'backward' ? '後ろ' : '前') + 'へ ' + mv + 'マス強制移動させ ' + v.pos + ' へ');
-            checkWins(g, v, v.pos, []);
-            trimLog(g); return { ok: true };
-        }
-        if (w.id === 'fuhou') {
-            const hid = g.soldiers.filter(function(o) { return o.alive && o.team === foe && SQ[o.pos].kind === 'T'; });
-            if (!hid.length) return { ok: false, err: '潜伏している敵がいません' };
-            g.used[s.team].fuhou = true;
-            g.log.push('🛂 村上の不法滞在！ 潜伏中の' + JPN[foe] + 'を摘発');
-            hid.forEach(function(o) {
-                const door = SQ[o.pos].door;
-                if (door && !soldierAt(g, door)) {
-                    const from = o.pos; o.pos = door; o.locked = false;
-                    g.log.push('　→ ' + plbl(o) + ' が ' + from + ' から ' + door + ' へ叩き出された');
-                } else {
-                    g.log.push('　→ ' + plbl(o) + ' は出口が塞がれており居座った');
-                }
-            });
-            trimLog(g); return { ok: true };
-        }
-        if (w.id === 'gakureki') {
-            g.used[s.team].gakureki = true;
-            g.gakureki = { target: foe, turn: g.turn + 1 };
-            g.log.push('📕 西尾の学歴コンプ発動！ 次の' + JPN[foe] + 'のターンは ' + GAKUREKI_FREE.join('・') + ' 以外行動できない');
-            trimLog(g); return { ok: true };
-        }
-        if (w.id === 'comic') {
-            if (!s.comicReady) {
-                if (s.comicDeclared) return { ok: false, err: 'コミックパワーはこのターンすでに宣言しています' };
-                if (!floorOfPos(s.pos)) return { ok: false, err: '通り（廊下・潜伏所・大部屋）にいる時だけ宣言できます' };
-                s.comicDeclared = true;
-                g.log.push('💣 金澤&ノノカのコミックパワーを宣言！ ' + plbl(s) + ' は次の自分のターンに爆発させられる');
-                trimLog(g); return { ok: true, declared: true };
-            }
-            const fl = floorOfPos(s.pos);
-            if (!fl) return { ok: false, err: '通り（廊下・潜伏所・大部屋）にいる時だけ使えます' };
-            g.used[s.team].comic = true;
-            s.comicReady = false;
-            s.comicDeclared = false;
-            g.log.push('💣 金澤&ノノカのコミックパワー！ ' + fl + '階の通りが吹き飛んだ');
-            const victims = g.soldiers.filter(function(o) { return o.alive && o.role === 'soldier' && floorOfPos(o.pos) === fl; });
-            victims.forEach(function(o) {
-                if (killPiece(g, o, '　→ ' + plbl(o) + ' が ' + o.pos + ' で巻き込まれ撃破された', true) && o.team === foe) kills.push(o);
-            });
-            checkWins(g, s, null, kills);
-            trimLog(g); return { ok: true, activated: true };
-        }
-        if (w.id === 'maeba') {
-            return maebaMove(g, sid, targetSid);
-        }
-        return { ok: false, err: '未対応の装備品です' };
-    }
-
-    /* 【平井の人造前歯】: 同じ階・同じ縦列の任意マスへ一気に移動する */
     function maebaMove(g, sid, to) {
-        if (g.phase !== 'play') return { ok: false, err: 'ゲームは進行中ではありません' };
         const s = getS(g, sid);
-        if (!s || !s.alive) return { ok: false, err: 'その駒は動かせません' };
-        if (s.team !== g.activeTeam) return { ok: false, err: '相手のターンです' };
-        if (s.wp !== 'maeba') return { ok: false, err: '平井の人造前歯を装備していません' };
-        if (weaponSpent(g, s.team, WP.maeba)) return { ok: false, err: '平井の人造前歯は使用済みです' };
+        const bad = canActPiece(g, s);
+        if (bad) return bad;
+        if (effWp(s) !== 'maeba') return { ok: false, err: '平井の人造前歯を装備していません' };
+        if (!s.maebaReady) return { ok: false, err: '前のターンに宣言が必要です' };
         const route = maebaPath(g, s, to);
         if (!route.ok) return route;
-        const kills = [];
+        setPop(g, 'maeba', s, '');
         let moved = 0;
         for (const nxt of route.path) {
+            if (!s.alive) break;
             const v = enemyAt(g, nxt, s.team);
             if (SQ[s.pos].corridor !== SQ[nxt].corridor && !g.crossed[SQ[nxt].floor]) {
                 g.crossed[SQ[nxt].floor] = true;
@@ -1282,19 +1356,168 @@ const RULES = (function() {
             }
             pushTrail(g, s, s.pos, nxt);
             s.pos = nxt; moved++;
-            if (v && killPiece(g, v, '⚔ 人造前歯の突進！ ' + plbl(v) + ' が ' + nxt + ' で撃破された')) kills.push(v);
+            if (v) killPiece(g, v, '⚔ 人造前歯の突進！ ' + plbl(v) + ' が ' + nxt + ' で撃破された', { killer: s });
+            toyokoTrap(g, s, nxt);
         }
-        markWeaponUsed(g, s.team, 'maeba');
+        s.maebaReady = false;
         s.steps = 0;
-        g.log.push('🦷 ' + plbl(s) + ' が人造前歯で ' + moved + 'マス突進して ' + s.pos + ' へ（残り' + Math.max(0, 2 - weaponUsedCount(g, s.team, 'maeba')) + '回）');
-        splashAttack(g, s, kills);
-        checkWins(g, s, s.pos, kills);
+        g.log.push('🦷 ' + plbl(s) + ' が人造前歯で ' + moved + 'マス突進して ' + s.pos + ' へ' + (s.alive ? '' : '（途中で倒れた）'));
+        resolveWins(g);
         trimLog(g);
         return { ok: true };
     }
 
+    /* 【ファイナルノノカエクスプロージョン】起爆：自分の死と引き換えに、同じ通りの潜伏していない全員を破壊 */
+    function detonateNonoka(g, s) {
+        s.nonokaArmed = false;
+        const c = corrIndex(s.pos);
+        const fl = c ? c.floor : 0;
+        setPop(g, 'nonoka', s, fl ? (fl === 1 ? 'A・B' : 'C・D') + 'の通りが吹き飛んだ' : '');
+        g.log.push('💥 ファイナルノノカエクスプロージョン！ ' + plbl(s) + ' が起爆した');
+        killPiece(g, s, '☠ ' + plbl(s) + ' は爆発と共に散った', { noRevive: true });
+        if (fl) {
+            g.soldiers.filter(function(o) {
+                return o.alive && SQ[o.pos].kind === 'corridor' && SQ[o.pos].floor === fl;
+            }).forEach(function(o) {
+                killPiece(g, o, '　→ ' + plbl(o) + ' が ' + o.pos + ' で爆発に巻き込まれた', { killer: s });
+            });
+        }
+        resolveWins(g);
+    }
+
+    /* ===== 任意発動の装備品 =====
+       target  : hardgel / daichari → 相手の sid、shuchi → 味方の女子の sid、
+                 shinasadame → 部屋ID（T1〜T16 / X / Y）、maeba（突進時）→ 移動先マス
+       extra   : shuchi のワープ先マス */
+    function useWeapon(g, sid, target, extra) {
+        const s = getS(g, sid);
+        const bad = canActPiece(g, s);
+        if (bad) return bad;
+        const e = effWp(s);
+        const w = e ? WP[e] : null;
+        if (!w) return { ok: false, err: s.agaDud ? 'AGA治療薬を押し付けられていて、装備は効果がありません' : '装備品がありません' };
+        if (w.kind !== 'active') return { ok: false, err: w.name + ' は任意発動できません' };
+        if (weaponSpent(s, w)) return { ok: false, err: w.name + ' は使用済みです' };
+        const foe = OTHER[s.team];
+
+        if (w.id === 'funnel') {
+            /* 生存中の相手全員 ＋ ハズレ3枚 から1枚を引く。ハズレでも自分は消滅 */
+            const enemies = g.soldiers.filter(function(o) { return o.alive && o.team === foe; });
+            const pick = Math.floor(Math.random() * (enemies.length + FUNNEL_BLANKS));
+            markWeaponUsed(s, 'funnel');
+            const v = pick < enemies.length ? enemies[pick] : null;
+            setPop(g, 'funnel', s, v ? v.name + ' を撃破' : 'ハズレ…');
+            g.log.push('✨ ファンネル石井発動！ ' + plbl(s) + ' が自らを生贄に捧げた');
+            killPiece(g, s, '☠ ' + plbl(s) + ' は消滅した', { noRevive: true });
+            if (v) killPiece(g, v, '🎯 無作為に選ばれた ' + plbl(v) + ' が撃破された', { killer: s });
+            else g.log.push('🎯 抽選の結果はハズレだった');
+            resolveWins(g);
+            trimLog(g); return { ok: true };
+        }
+        if (w.id === 'hardgel') {
+            const v = getS(g, target);
+            if (!v || !v.alive || v.team !== foe) return { ok: false, err: '対象の相手の駒を選んでください' };
+            if (!visibleSquares(g, s.team).has(v.pos)) return { ok: false, err: '見えている相手しか対象にできません' };
+            markWeaponUsed(s, 'hardgel');
+            v.stun = true;
+            setPop(g, 'hardgel', s, v.name + ' を固めた');
+            g.log.push('💈 小野寺のハードジェル！ ' + plbl(v) + ' は次のターン行動不能');
+            trimLog(g); return { ok: true };
+        }
+        if (w.id === 'daichari') {
+            const v = getS(g, target);
+            if (!v || !v.alive || v.team !== foe) return { ok: false, err: '対象の相手の駒を選んでください' };
+            if (SQ[v.pos].kind === 'T') return { ok: false, err: '潜伏中の相手には効きません' };
+            if (!corrIndex(v.pos)) return { ok: false, err: '廊下にいる相手にしか効きません' };
+            if (!visibleSquares(g, s.team).has(v.pos)) return { ok: false, err: '見えている相手しか対象にできません' };
+            markWeaponUsed(s, 'daichari');
+            const mv = forcePush(g, v, 5);
+            setPop(g, 'daichari', s, v.name + ' を' + mv + 'マス前進させた');
+            g.log.push('🚲 中村のダイチャリ！ ' + plbl(v) + ' を ' + mv + 'マス強制前進させ ' + v.pos + ' へ');
+            resolveWins(g);
+            trimLog(g); return { ok: true };
+        }
+        if (w.id === 'iemuri') {
+            /* 誰も潜伏していなくても消費する（空振りで情報だけ得られないように） */
+            markWeaponUsed(s, 'iemuri');
+            const hid = g.soldiers.filter(function(o) { return o.alive && o.team === foe && SQ[o.pos].kind === 'T'; });
+            setPop(g, 'iemuri', s, hid.length ? hid.length + '人が死亡' : '誰も潜伏していなかった');
+            g.log.push('🏠 ごめん今日家無理だわ！ 潜伏中の' + JPN[foe] + 'は全員死亡' + (hid.length ? '' : '……誰も潜伏していなかった'));
+            hid.forEach(function(o) {
+                killPiece(g, o, '　→ ' + plbl(o) + ' が ' + o.pos + ' で死亡した', { killer: s });
+            });
+            resolveWins(g);
+            trimLog(g); return { ok: true };
+        }
+        if (w.id === 'shuchi') {
+            const v = getS(g, target);
+            if (!v || !v.alive || v.team !== s.team || v.sid === s.sid) return { ok: false, err: 'ワープさせる味方を選んでください' };
+            if (v.sex !== 'F') return { ok: false, err: v.name + ' は女子ではありません' };
+            const dests = shuchiDests(g, s);
+            if (dests.indexOf(extra) < 0) return { ok: false, err: '自分の縦横1マス隣の空いているマスを選んでください' };
+            markWeaponUsed(s, 'shuchi');
+            const from = v.pos;
+            pushTrail(g, v, from, extra);
+            v.pos = extra;
+            v.locked = false;
+            setPop(g, 'shuchi', s, v.name + ' を ' + extra + ' へワープ');
+            g.log.push('🍶 酒池クニ林！ ' + plbl(v) + ' が ' + from + ' から ' + plbl(s) + ' の隣 ' + extra + ' へワープした');
+            toyokoTrap(g, v, extra);
+            resolveWins(g);
+            trimLog(g); return { ok: true };
+        }
+        if (w.id === 'ogoru') {
+            markWeaponUsed(s, 'ogoru');
+            const who = g.soldiers.filter(function(o) { return o.alive && o.team === s.team && o.year === 80 && !o.frozen && !o.nonokaArmed; });
+            who.forEach(function(o) { o.steps += 1; });
+            setPop(g, 'ogoru', s, who.length ? '80期 ' + who.length + '人が+1' : '80期がいない');
+            g.log.push('🍻 ああ、ここは俺が奢るわ！ ' + JPN[s.team] + 'の80期（' + (who.map(function(o) { return o.name; }).join('・') || 'なし') + '）の行動マスが今ターン+1');
+            trimLog(g); return { ok: true };
+        }
+        if (w.id === 'shinasadame') {
+            const room = String(target || '');
+            const isT = SQ[room] && SQ[room].kind === 'T';
+            if (!isT && room !== 'X' && room !== 'Y') return { ok: false, err: '確認する部屋（潜伏所か大部屋X・Y）を選んでください' };
+            markWeaponUsed(s, 'shinasadame');
+            const who = g.soldiers.filter(function(o) {
+                return o.alive && (isT ? o.pos === room : SQ[o.pos].room === room);
+            });
+            const label = isT ? '潜伏所' + room : '大部屋' + room;
+            const res = who.length ? who.map(function(o) { return plbl(o); }).join('・') : '誰もいない';
+            setPop(g, 'shinasadame', s, label + '：' + res);
+            g.log.push('🔍 品定め：' + plbl(s) + ' が' + label + 'を確認 → ' + res);
+            trimLog(g); return { ok: true, result: res };
+        }
+        if (w.id === 'maeba') {
+            if (s.maebaReady) return maebaMove(g, sid, target);
+            if (s.maebaDeclared) return { ok: false, err: 'このターンはもう宣言しています' };
+            if (!corrIndex(s.pos)) return { ok: false, err: '廊下にいる時だけ宣言できます' };
+            s.maebaDeclared = true;
+            g.log.push('🦷 平井の人造前歯を宣言！ ' + plbl(s) + ' は次の自分のターンに突進できる');
+            trimLog(g); return { ok: true, declared: true };
+        }
+        if (w.id === 'nonoka') {
+            if (!corrIndex(s.pos)) return { ok: false, err: '廊下（通り）にいる時だけ宣言できます' };
+            markWeaponUsed(s, 'nonoka');
+            s.nonokaArmed = true;
+            s.steps = 0;
+            g.log.push('💣 ファイナルノノカエクスプロージョンを宣言！ ' + plbl(s) + ' は次の自分のターン開始時に起爆する（以後行動不能）');
+            trimLog(g); return { ok: true, declared: true };
+        }
+        return { ok: false, err: '未対応の装備品です' };
+    }
+    /* 【酒池クニ林】のワープ先：自分の縦横1マス隣の空きマス（潜伏所・本殿は除く） */
+    function shuchiDests(g, s) {
+        if (!s || !s.alive) return [];
+        return adjacentSquares(g, s.pos).filter(function(id) {
+            const q = SQ[id];
+            return q && q.kind !== 'T' && q.kind !== 'honden' && !soldierAt(g, id);
+        });
+    }
+
     function endTurn(g) {
         if (g.phase !== 'play') return;
+        if (blockedByPakuri(g)) return;
         if (g.turn >= 30) {
             finalScore(g);
             return;
@@ -1408,27 +1631,38 @@ const RULES = (function() {
         return vis;
     }
     /* いま盤面で効いている常時効果の一覧。viewTeam から見えるものだけを返す
-       （自軍は常に見える。敵軍は、その駒が視認できている時だけ見える） */
+       （自軍は常に見える。敵軍の常時効果は、その駒が視認できている時だけ見える。
+        ノノカの宣言は公開ログに出ているので両軍に見える） */
     function activeEffects(g, viewTeam) {
         const out = [];
         const vis = viewTeam ? visibleSquares(g, viewTeam) : null;
         g.soldiers.forEach(function(s) {
-            if (!s.alive || !s.wp) return;
-            const w = WP[s.wp];
-            if (!w || w.kind !== 'passive') return;
+            if (!s.alive) return;
             const mine = (!viewTeam || s.team === viewTeam);
+            if (s.nonokaArmed) out.push({ team: s.team, name: s.name, wp: 'nonokaArmed', mine: mine });
+            if (mine && (s.maebaReady || s.maebaDeclared)) out.push({ team: s.team, name: s.name, wp: s.maebaReady ? 'maebaReady' : 'maebaDeclared', mine: true });
+            const e = effWp(s);
+            const w = e ? WP[e] : null;
+            if (!w || w.kind !== 'passive') return;
             if (!mine && vis && !vis.has(s.pos)) return;
-            out.push({ team: s.team, name: s.name, wp: s.wp, mine: mine });
+            out.push({ team: s.team, name: s.name, wp: e, mine: mine });
         });
-        /* 【図体のでかい関原】の死亡ペナルティは、駒が消えた後も効き続ける */
+        /* 【図体のでかい関原】の装備者が倒れたペナルティは、駒が消えた後も効き続ける */
         ['blue', 'red'].forEach(function(t) {
-            if (g.zutaiDown && g.zutaiDown[t]) out.push({ team: t, name: null, wp: 'zutaiDown', mine: (!viewTeam || t === viewTeam) });
+            const n = Number((g.zutaiDown && g.zutaiDown[t]) || 0);
+            if (n) out.push({ team: t, name: null, wp: 'zutaiDown', count: n, mine: (!viewTeam || t === viewTeam) });
         });
         return out;
     }
     return {
         plbl,
         activeEffects,
+        loadout,
+        pakuriChoices,
+        pendingPakuri,
+        declarePakuri,
+        shuchiDests,
+        resolveWins,
         wpFull,
         roleGlyph,
         slotLabel,
@@ -1899,10 +2133,13 @@ Net.prototype.reclaim = async function(code, team, onProgress) {
         team: team
     };
 };
-Net.prototype.publishPlace = function(list, ready) {
+/* letter: 自分のチーム(A/B/C)。meta は両者が同時に書き換えると片方が消えるため、
+   各自の配置チャンネルにも載せておく（こちらは自分しか書かないので競合しない） */
+Net.prototype.publishPlace = function(list, ready, letter) {
     return this.pub('p/' + this.team, {
         t: Date.now(),
         ready: !!ready,
+        letter: letter || null,
         list: list
     }, true);
 };
@@ -2071,6 +2308,7 @@ if (typeof module !== 'undefined' && module.exports) {
         cpuOpt: {
             team: 'blue',
             letter: 'A',
+            aiPick: 'auto',
             first: 'cpu',
             level: 'strong'
         }
@@ -2142,8 +2380,14 @@ if (typeof module !== 'undefined' && module.exports) {
         renderSquad();
     }
     function squadEditTeam() {
+        if (APP.mode === 'cpu' && APP.editingAI) return APP.cpuTeam;
         return (APP.mode === 'online' || APP.mode === 'cpu') ? APP.myTeam : APP.squadTeam;
     }
+    /* レア度順（UR→SSR→SR→R）に並べる */
+    function weaponsSorted(list) {
+        return list.slice().sort(function(a, b) { return RARITY_ORDER[a.rarity] - RARITY_ORDER[b.rarity]; });
+    }
+    function rarBadge(r) { return r ? '<span class="rar ' + r + '">' + r + '</span>' : ''; }
     /* いま他スロットで使用中の名前／武器 */
     function usedIn(sq, field, exceptIdx) {
         var o = {};
@@ -2161,7 +2405,9 @@ if (typeof module !== 'undefined' && module.exports) {
             return '<button data-act="squad-letter-' + x + '"' + on + dis + '>チーム' + x +
                 (taken === x ? '（相手が使用中）' : '') + '</button>';
         }).join('');
-        var lead = (APP.mode === 'local') ?
+        var lead = APP.editingAI ?
+            '🤖 AI（' + JPN[team] + '）の編成です。AIが使う選手と装備品を自由に決められます。' :
+            (APP.mode === 'local') ?
             JPN[team] + '陣の編成です。8人と装備品を決めてください。' :
             '出陣させる8人と、それぞれの装備品を決めます。装備品は1個ずつしかなく、同じものを2人は持てません。';
         $('squadLead').textContent = lead;
@@ -2195,14 +2441,14 @@ if (typeof module !== 'undefined' && module.exports) {
             }
             h += '<div class="slotRow"><label>装備品</label><select data-sq="wp" data-idx="' + i + '">';
             h += '<option value=""' + (sl.wp ? '' : ' selected') + '>装備なし</option>';
-            weaponsFor(L, m).forEach(function(w) {
+            weaponsSorted(weaponsFor(L, m)).forEach(function(w) {
                 var dis = usedW[w.id] ? ' disabled' : '';
                 h += '<option value="' + w.id + '"' + (sl.wp === w.id ? ' selected' : '') + dis + '>' +
-                    esc(w.name) + (usedW[w.id] ? '（使用中）' : '') + '</option>';
+                    '[' + w.rarity + '] ' + esc(w.name) + (usedW[w.id] ? '（使用中）' : '') + '</option>';
             });
             h += '</select></div>';
             var w = sl.wp ? WP[sl.wp] : null;
-            h += '<div class="wpNote' + (w ? '' : ' wpNone') + '">' + (w ? esc(w.desc) : '装備なし') + '</div>';
+            h += '<div class="wpNote' + (w ? '' : ' wpNone') + '">' + (w ? rarBadge(w.rarity) + esc(w.desc) : '装備なし') + '</div>';
             h += '<div class="sqPreview">' + esc(RULES.slotLabel(m, sl.role, sl.wp)) + '</div>';
             h += '</div>';
         });
@@ -2296,6 +2542,22 @@ if (typeof module !== 'undefined' && module.exports) {
                 syncLetters(APP.meta);
             }
         }
+        if (APP.mode === 'cpu' && !APP.editingAI && APP.cpuOpt.aiPick === 'manual') {
+            APP.edit[team].list = [];
+            APP.placeSlot = 0;
+            APP.editingAI = true;
+            showScreen('scrSquad');
+            renderSquad();
+            hint('続いてAIの編成（選手と装備品）を決めてください');
+            return;
+        }
+        if (APP.mode === 'cpu' && APP.editingAI) {
+            APP.editingAI = false;
+            showScreen('scrGame');
+            zoomMyHalf();
+            renderAll();
+            return;
+        }
         APP.edit[team].list = [];
         APP.placeSlot = 0;
         if (APP.mode === 'local' && team === 'blue') {
@@ -2314,6 +2576,11 @@ if (typeof module !== 'undefined' && module.exports) {
         renderAll();
     }
     function squadBack() {
+        if (APP.mode === 'cpu' && APP.editingAI) {
+            APP.editingAI = false;
+            renderSquad();
+            return;
+        }
         if (APP.mode === 'local' && APP.squadTeam === 'red') {
             APP.squadTeam = 'blue';
             renderSquad();
@@ -2559,6 +2826,7 @@ if (typeof module !== 'undefined' && module.exports) {
         var cl = rest[Math.floor(Math.random() * rest.length)];
         APP.letter[APP.cpuTeam] = cl;
         APP.squad[APP.cpuTeam] = autoSquad(cl);
+        APP.editingAI = false;
         hideBanner();
         gotoSquad(t, mine);
     }
@@ -2575,9 +2843,9 @@ if (typeof module !== 'undefined' && module.exports) {
         APP.maebaAim = null;
         APP.logOpen = false;
         APP.cpuMem = {};
+        APP.eqOpen = false;
         zoomMyHalf();
-        renderAll();
-        if (APP.g.activeTeam === APP.cpuTeam) scheduleCpu();
+        pakuriProgress();
     }
 
     function scheduleCpu() {
@@ -2695,7 +2963,9 @@ if (typeof module !== 'undefined' && module.exports) {
             pr = N.places.red;
         if (!(pb && pb.ready && pr && pr.ready)) return;
         var m = APP.meta || N.meta;
-        var lt = (m && m.letters) || {};
+        var ml = (m && m.letters) || {};
+        /* チーム文字は配置データを優先（競合しない）、無ければ meta から */
+        var lt = { blue: pb.letter || ml.blue, red: pr.letter || ml.red };
         if (!lt.blue || !lt.red) {
             hint('両者のチーム（A/B/C）が確定していません');
             return;
@@ -2874,7 +3144,7 @@ if (typeof module !== 'undefined' && module.exports) {
                 return;
             }
         }
-        if (!APP.net.publishPlace(ed.list, on)) {
+        if (!APP.net.publishPlace(ed.list, on, APP.letter[APP.myTeam])) {
             hint('送信に失敗しました。通信状態をご確認ください');
             return;
         }
@@ -3056,9 +3326,13 @@ if (typeof module !== 'undefined' && module.exports) {
         var chips = list.map(function(e) {
             var cls = e.mine ? 'me' : 'foe';
             if (e.wp === 'zutaiDown')
-                return '<span class="fx ' + cls + '">' + JPN[e.team] + ' 全員 −2（関原 戦死）</span>';
+                return '<span class="fx ' + cls + '">' + JPN[e.team] + ' 全員 −' + (e.count || 1) + '（図体のでかい関原）</span>';
+            if (e.wp === 'nonokaArmed')
+                return '<span class="fx ' + cls + '">💣 ' + JPN[e.team] + esc(e.name) + '：ノノカ起爆待ち</span>';
+            if (e.wp === 'maebaDeclared' || e.wp === 'maebaReady')
+                return '<span class="fx ' + cls + '">🦷 ' + esc(e.name) + '：前歯' + (e.wp === 'maebaReady' ? ' 突進可' : ' 宣言済み') + '</span>';
             var w = WP[e.wp];
-            return '<span class="fx ' + cls + '">' + esc(e.name) + '：' + esc(w.alias || w.name) + '</span>';
+            return '<span class="fx ' + cls + '">' + esc(e.name) + '：' + esc(w.name) + '</span>';
         });
         var h = chips.join('');
         if (chips.length > 2) h += '<button class="fxMore" data-act="fx-toggle">' + (APP.fxOpen ? '閉じる' : '⚡' + chips.length) + '</button>';
@@ -3102,13 +3376,13 @@ if (typeof module !== 'undefined' && module.exports) {
     }
 
     /* ---------- 単発発動の中央ポップアップ ---------- */
-    function showWpPop(wpId, byTeam, byName) {
+    function showWpPop(wpId, byTeam, byName, detail) {
         var w = WP[wpId];
         if (!w) return;
         var box = $('wpPop');
-        $('wpPopWho').innerHTML = '<b class="' + byTeam + '">' + JPN[byTeam] + '</b> ' + esc(byName);
+        $('wpPopWho').innerHTML = rarBadge(w.rarity) + '<b class="' + byTeam + '">' + JPN[byTeam] + '</b> ' + esc(byName);
         $('wpPopBig').textContent = w.name + ' 発動！';
-        $('wpPopSub').textContent = (w.alias ? '「' + w.alias + '」　' : '') + w.desc;
+        $('wpPopSub').textContent = detail ? '→ ' + detail : w.desc;
         box.classList.add('show');
         clearTimeout(showWpPop._t);
         showWpPop._t = setTimeout(function() { box.classList.remove('show'); }, 3200);
@@ -3119,11 +3393,11 @@ if (typeof module !== 'undefined' && module.exports) {
         if (!g || !g.pop) return;
         if (APP._popSeen === g.pop.seq) return;
         APP._popSeen = g.pop.seq;
-        showWpPop(g.pop.wp, g.pop.by, g.pop.name);
+        showWpPop(g.pop.wp, g.pop.by, g.pop.name, g.pop.detail);
     }
 
     /* ---------- 装備品リファレンス（自分のチームの全性能） ---------- */
-    var KIND_JP = { passive: '常時', active: '任意発動', reactive: '条件発動', flavor: '効果なし' };
+    var KIND_JP = { passive: '常時', active: '任意発動', reactive: '条件発動', copy: 'コピー', flavor: '効果なし' };
     function renderWpRef() {
         var el = $('wpRefBox');
         if (!el) return;
@@ -3133,16 +3407,19 @@ if (typeof module !== 'undefined' && module.exports) {
         var sq = APP.squad[team] || [];
         var owner = {};
         sq.forEach(function(sl) { if (sl.wp) owner[sl.wp] = sl.name; });
-        var mine = WEAPONS.filter(function(w) { return w.team === L; });
-        var h = '<div class="wpRef"><h4>チーム' + L + 'の装備品 ' + mine.length + '種</h4>';
-        mine.forEach(function(w) {
-            h += '<div class="item"><div><span class="nm">' + esc(w.name) + '</span>' +
-                (w.alias ? '<span class="al">' + esc(w.alias) + '</span>' : '') +
-                '<span class="kd">' + KIND_JP[w.kind] + (weaponUseLimit(w) ? '・' + weaponUseLimit(w) + '回' : '') + '</span></div>' +
-                '<div class="ds">' + esc(w.desc) + '</div>' +
-                (w.only ? '<div class="ow">※ ' + esc(w.only) + ' 専用</div>' : '') +
-                (owner[w.id] ? '<div class="ow">→ ' + esc(owner[w.id]) + ' が装備中</div>' : '') +
-                '</div>';
+        var h = '<div class="wpRef"><h4>装備品 全' + WEAPONS.length + '種（誰でも装備可能）</h4>';
+        ['UR', 'SSR', 'SR', 'R'].forEach(function(r) {
+            var list = WEAPONS.filter(function(w) { return w.rarity === r; });
+            if (!list.length) return;
+            h += '<h5>' + rarBadge(r) + list.length + '種</h5>';
+            list.forEach(function(w) {
+                var lim = weaponUseLimit(w);
+                h += '<div class="item"><div>' + rarBadge(w.rarity) + '<span class="nm">' + esc(w.name) + '</span>' +
+                    '<span class="kd">' + KIND_JP[w.kind] + (lim ? '・' + lim + '回' : '') + (w.declare ? '・要宣言' : '') + '</span></div>' +
+                    '<div class="ds">' + esc(w.desc) + '</div>' +
+                    (owner[w.id] ? '<div class="ow">→ ' + esc(owner[w.id]) + ' が装備中</div>' : '') +
+                    '</div>';
+            });
         });
         h += '</div>';
         el.innerHTML = h;
@@ -3239,56 +3516,73 @@ if (typeof module !== 'undefined' && module.exports) {
     }
 
     function activeWeaponOf(s) {
-        if (!s || !s.alive || !s.wp) return null;
-        var w = WP[s.wp];
+        if (!s || !s.alive) return null;
+        var e = effWp(s);
+        var w = e ? WP[e] : null;
         if (!w || w.kind !== 'active') return null;
-        if (weaponSpent(APP.g, s.team, w)) return null;
-        if (w.id === 'comic' && s.comicDeclared && !s.comicReady) return null;
+        if (weaponSpent(s, w) || s.frozen || s.nonokaArmed) return null;
+        if (w.id === 'maeba' && s.maebaDeclared) return null;
         return w;
     }
-    /* 対象指定が要る装備品 */
-    function needsTarget(w) { return w && (w.id === 'hardgel' || w.id === 'daichari'); }
-
+    /* 対象選択モードに入る。kind: enemy / allyF / dest / room */
+    function startAim(sid, kind, msg) {
+        APP.target = sid;
+        APP.aimKind = kind;
+        APP.targetVictim = null;
+        APP.maebaAim = null;
+        APP.selected = null;
+        hint(msg);
+        renderAll();
+    }
+    function clearAim() {
+        APP.target = null;
+        APP.aimKind = null;
+        APP.targetVictim = null;
+        APP.maebaAim = null;
+    }
+    /* 取り返しのつかない武器は確認してから */
+    var CONFIRM_WP = { funnel: 1, iemuri: 1, nonoka: 1 };
     function useWeaponUI() {
         if (!canAct() || !APP.selected) return;
         var s = RULES.getS(APP.g, APP.selected);
         var w = activeWeaponOf(s);
         if (!w) { hint('いま使える装備品がありません'); return; }
-        if (w.id === 'maeba') {
+        if (w.id === 'maeba' && s.maebaReady) {
             var targets = RULES.maebaTargets(APP.g, s.sid);
-            if (!targets.length) { hint('同じ縦列に移動できるマスがありません'); return; }
+            if (!targets.length) { hint('相手陣地の方向に進めるマスがありません'); return; }
+            clearAim();
             APP.maebaAim = s.sid;
-            APP.target = null;
-            APP.targetVictim = null;
-            hint('人造前歯の移動先をタップしてください');
+            APP.selected = null;
+            hint('人造前歯の行き先をタップしてください');
             renderAll();
             return;
         }
-        if (needsTarget(w)) {
-            APP.target = s.sid;
-            APP.targetVictim = null;
-            APP.maebaAim = null;
-            hint('対象にする敵の駒をタップしてください');
-            renderAll();
+        if (w.id === 'hardgel' || w.id === 'daichari') { startAim(s.sid, 'enemy', '対象にする相手の駒をタップしてください'); return; }
+        if (w.id === 'shuchi') {
+            if (!RULES.shuchiDests(APP.g, s).length) { hint('自分の縦横1マス隣に空きマスがありません'); return; }
+            var fs = APP.g.soldiers.filter(function(o) { return o.alive && o.team === s.team && o.sid !== s.sid && o.sex === 'F'; });
+            if (!fs.length) { hint('ワープさせられる味方の女子がいません'); return; }
+            startAim(s.sid, 'allyF', 'ワープさせる味方の女子をタップしてください（下の駒バーからも選べます）');
             return;
         }
+        if (w.id === 'shinasadame') { startAim(s.sid, 'room', '確認したい部屋（潜伏所か大部屋X・Y）をタップしてください'); return; }
+        if (CONFIRM_WP[w.id] && typeof window !== 'undefined' && window.confirm &&
+            !window.confirm(w.name + ' を発動します。\n\n' + w.desc + '\n\nよろしいですか？')) return;
         applyWeapon(s.sid, null);
     }
-    function applyWeapon(sid, targetSid, direction) {
-        APP.histG.push(JSON.parse(JSON.stringify(APP.g)));
-        var r = RULES.useWeapon(APP.g, sid, targetSid, direction);
-        APP.target = null;
-        APP.targetVictim = null;
-        APP.maebaAim = null;
+    function applyWeapon(sid, target, extra) {
+        var r = RULES.useWeapon(APP.g, sid, target, extra);
+        clearAim();
         if (!r.ok) {
-            APP.histG.pop();
             hint(r.err);
             renderAll();
             return;
         }
+        /* 武器の使用後は「待った」を効かなくする（抽選のやり直しや、覗いてから戻すのを防ぐ） */
+        APP.histG = [];
         APP.selected = null;
-        APP.maebaAim = null;
         APP._trailSeen = APP.g.trailSeq || 0;
+        if (r.declared) hint('宣言しました');
         markDirty(true);
         if (APP.g.phase === 'over') showBanner();
         renderAll();
@@ -3296,21 +3590,37 @@ if (typeof module !== 'undefined' && module.exports) {
     function maebaUI(to) {
         var sid = APP.maebaAim || APP.selected;
         if (!canAct() || !sid) return;
-        APP.histG.push(JSON.parse(JSON.stringify(APP.g)));
-        var r = RULES.maebaMove(APP.g, sid, to);
-        APP.maebaAim = null;
-        if (!r.ok) {
-            APP.histG.pop();
-            hint(r.err);
-            renderAll();
-            return;
+        applyWeapon(sid, to);
+    }
+    /* 対象選択中のタップ。処理したら true */
+    function handleAimTap(d) {
+        var g = APP.g;
+        var user = RULES.getS(g, APP.target);
+        if (!user || !user.alive) { clearAim(); renderAll(); return true; }
+        var kind = APP.aimKind;
+        var p = d && d.pid ? RULES.getS(g, d.pid) : null;
+        var sq = d ? (d.step || d.id || (p ? p.pos : null)) : null;
+        if (kind === 'enemy') {
+            if (p && p.alive && p.team !== user.team) { applyWeapon(user.sid, p.sid); return true; }
+        } else if (kind === 'allyF') {
+            if (p && p.alive && p.team === user.team && p.sid !== user.sid && p.sex === 'F') {
+                APP.targetVictim = p.sid;
+                APP.aimKind = 'dest';
+                hint(p.name + ' のワープ先（光ったマス）をタップしてください');
+                renderAll();
+                return true;
+            }
+        } else if (kind === 'dest') {
+            if (sq && RULES.shuchiDests(g, user).indexOf(sq) >= 0) { applyWeapon(user.sid, APP.targetVictim, sq); return true; }
+        } else if (kind === 'room') {
+            var q = sq ? SQ[sq] : null;
+            var room = q ? (q.kind === 'T' ? q.id : (q.room || null)) : null;
+            if (room) { applyWeapon(user.sid, room); return true; }
         }
-        APP.selected = null;
-        APP.maebaAim = null;
-        APP._trailSeen = APP.g.trailSeq || 0;
-        markDirty(true);
-        if (APP.g.phase === 'over') showBanner();
+        clearAim();
+        hint('対象の指定を取り消しました');
         renderAll();
+        return true;
     }
 
     function undoUI() {
@@ -3547,6 +3857,7 @@ if (typeof module !== 'undefined' && module.exports) {
         if (APP.g.phase !== 'play') {
             return;
         }
+        if (APP.target && APP.aimKind) { handleAimTap(d); return; }
         if (!d) {
             if (APP.maebaAim || APP.selected) {
                 APP.maebaAim = null;
@@ -3580,26 +3891,6 @@ if (typeof module !== 'undefined' && module.exports) {
                 else {
                     APP.maebaAim = null;
                     hint('人造前歯の指定を取り消しました');
-                    renderAll();
-                }
-                return;
-            }
-            /* 装備品の対象選択中なら、敵の駒タップで発動 */
-            if (APP.target) {
-                if (s && s.alive && s.team !== RULES.getS(APP.g, APP.target).team) {
-                    var src = RULES.getS(APP.g, APP.target);
-                    var sw = src && src.wp ? WP[src.wp] : null;
-                    if (sw && sw.id === 'daichari') {
-                        APP.targetVictim = s.sid;
-                        hint('前か後ろを選んでください');
-                        renderAll();
-                    } else {
-                        applyWeapon(APP.target, s.sid);
-                    }
-                } else {
-                    APP.target = null;
-                    APP.targetVictim = null;
-                    hint('対象の指定を取り消しました');
                     renderAll();
                 }
                 return;
@@ -3798,8 +4089,39 @@ if (typeof module !== 'undefined' && module.exports) {
                 out += pieceSvg(s.team, s.role, s.name, ap, s.sid, s.wp);
             });
         }
+        /* 装備品の対象選択中のハイライト */
+        if (g && g.phase === 'play' && APP.target && APP.aimKind) {
+            var au = RULES.getS(g, APP.target);
+            if (au && au.alive) {
+                var AC = '#b58cff', AF = 'rgba(181,140,255,0.28)';
+                var ac = centerOf(au.pos);
+                out += '<circle cx="' + ac[0] + '" cy="' + ac[1] + '" r="23" fill="none" stroke="' + AC + '" stroke-width="3.5" stroke-dasharray="6 4" pointer-events="none"/>';
+                var ring = function(pos) {
+                    var cc = centerOf(pos);
+                    out += '<circle cx="' + cc[0] + '" cy="' + cc[1] + '" r="21" fill="none" stroke="' + AC + '" stroke-width="3" pointer-events="none"/>';
+                };
+                if (APP.aimKind === 'enemy') {
+                    g.soldiers.forEach(function(o) { if (o.alive && o.team !== au.team && (!vis || vis.has(o.pos))) ring(o.pos); });
+                } else if (APP.aimKind === 'allyF') {
+                    g.soldiers.forEach(function(o) { if (o.alive && o.team === au.team && o.sid !== au.sid && o.sex === 'F') ring(o.pos); });
+                } else if (APP.aimKind === 'dest') {
+                    var vv = RULES.getS(g, APP.targetVictim);
+                    if (vv) ring(vv.pos);
+                    RULES.shuchiDests(g, au).forEach(function(to) {
+                        var q = SQ[to];
+                        out += '<rect data-step="' + to + '" x="' + (q.x + 1.5) + '" y="' + (q.y + 1.5) + '" width="' + (q.w - 3) + '" height="' + (q.h - 3) + '" fill="' + AF + '" stroke="' + AC + '" stroke-width="3"/>';
+                    });
+                } else if (APP.aimKind === 'room') {
+                    Object.values(SQ).forEach(function(q) {
+                        if (q.kind === 'T') out += '<circle cx="' + (q.x + 20) + '" cy="' + (q.y + 20) + '" r="19" fill="none" stroke="' + AC + '" stroke-width="3" pointer-events="none"/>';
+                        else if (q.room) out += '<rect x="' + (q.x + 2) + '" y="' + (q.y + 2) + '" width="' + (q.w - 4) + '" height="' + (q.h - 4) + '" fill="' + AF + '" pointer-events="none"/>';
+                    });
+                }
+                out += '<g pointer-events="none"><rect x="' + (ac[0] - 27) + '" y="' + (ac[1] - 40) + '" width="54" height="18" rx="9" fill="' + AC + '"/><text x="' + ac[0] + '" y="' + (ac[1] - 27) + '" text-anchor="middle" font-size="11" font-weight="700" fill="#1a1426">対象選択</text></g>';
+            }
+        }
         /* 選択とハイライト */
-        if (g && g.phase === 'play' && (APP.maebaAim || APP.selected)) {
+        if (g && g.phase === 'play' && !APP.aimKind && (APP.maebaAim || APP.selected)) {
             var aimingMaeba = !!APP.maebaAim;
             var sel = RULES.getS(g, APP.maebaAim || APP.selected);
             if (sel && sel.alive && sel.team === g.activeTeam) {
@@ -3900,12 +4222,17 @@ if (typeof module !== 'undefined' && module.exports) {
             if (seen) {
                 el.innerHTML = '<b class="' + ins.team + '">相手</b> ' + esc(RULES.plbl(ins)) +
                     '（' + ins.year + '／' + sexJP(ins.sex) + '）' + esc(ins.pos) +
-                    (ins.wp ? '　<span class="tag">' + esc(RULES.wpFull(ins.wp)) + '</span>' : '　<span class="mut">装備なし</span>') +
-                    (ins.wp && WP[ins.wp] ? '<div class="small mut">' + esc(WP[ins.wp].desc) + '</div>' : '') +
+                    (ins.wp ? '　<span class="tag">' + esc(wpLabelOf(ins)) + '</span>' : '　<span class="mut">装備なし</span>') +
+                    (effWp(ins) ? '<div class="small mut">' + esc(WP[effWp(ins)].desc) + '</div>' : '') +
                     '<div class="small"><button data-act="inspect-close" class="ghost">閉じる</button></div>';
                 return;
             }
             APP.inspect = null;
+        }
+        var pk = (g.phase === 'play') ? RULES.pendingPakuri(g) : null;
+        if (pk && !canDeclarePakuri(pk)) {
+            el.innerHTML = '<span class="mut">🪞 ' + JPN[pk.team] + 'が「パクリ大国代表村上」のコピー先を宣言しています…</span>';
+            return;
         }
         var s = APP.selected ? RULES.getS(g, APP.selected) : null;
         var ms = APP.maebaAim ? RULES.getS(g, APP.maebaAim) : null;
@@ -3915,12 +4242,14 @@ if (typeof module !== 'undefined' && module.exports) {
             return;
         }
         if (s) {
-            var wtxt = s.wp ? '　<span class="tag">' + esc(RULES.wpFull(s.wp)) + '</span>' : '';
-            var comicTxt = s.comicReady ? '　<span class="tag">コミック発動可</span>' : (s.comicDeclared ? '　<span class="tag">コミック宣言済み</span>' : '');
+            var wtxt = s.wp ? '　<span class="tag">' + esc(wpLabelOf(s)) + '</span>' : '';
+            var stTxt = s.maebaReady ? '　<span class="tag">前歯 突進可</span>' : (s.maebaDeclared ? '　<span class="tag">前歯 宣言済み</span>' : '');
+            if (s.frozen) stTxt += '　<span class="ng">固められていて行動不能</span>';
+            var se = effWp(s);
             el.innerHTML = '選択中: <b>' + esc(RULES.plbl(s)) + '</b>（' + s.year + '／' + sexJP(s.sex) + '）' +
-                esc(s.pos) + '　残り<b>' + s.steps + '</b>歩' + wtxt + comicTxt +
+                esc(s.pos) + '　残り<b>' + s.steps + '</b>歩' + wtxt + stTxt +
                 (s.locked ? '　<span class="mut">※潜伏所に入ったので今ターンは終了</span>' : '') +
-                (s.wp && WP[s.wp] ? '<div class="small mut">' + esc(WP[s.wp].desc) + '</div>' : '');
+                (se ? '<div class="small mut">' + esc(WP[se].desc) + '</div>' : '');
         }
         else if (APP.mode === 'cpu' && (APP.thinking || g.activeTeam !== APP.myTeam)) el.innerHTML = '<span class="mut">🤖 AIが考えています…</span>';
         else if (APP.mode === 'online' && g.activeTeam !== APP.myTeam) el.innerHTML = '<span class="mut">相手のターンです。相手が動かすと即座に反映されます</span>' + (APP.oppOnline ? '' : ' <span class="ng">（相手の接続が切れています）</span>');
@@ -3956,31 +4285,26 @@ if (typeof module !== 'undefined' && module.exports) {
         } else if (g.phase === 'play') {
             var mine = canAct();
             var sel = APP.selected ? RULES.getS(g, APP.selected) : null;
+            var AIM_TXT = { enemy: '対象の相手をタップ', allyF: 'ワープさせる女子をタップ', dest: 'ワープ先をタップ', room: '確認する部屋をタップ' };
             if (APP.maebaAim) {
-                h += '<span class="tag" id="targetNote">前歯の移動先を選択</span>' + btn('cancel-target', '取消', 'warn');
-            } else if (APP.target) {
-                if (APP.targetVictim) {
-                    h += '<span class="tag" id="targetNote">移動方向を選択</span>' +
-                        btn('daichari-forward', '前へ5マス', 'warn') +
-                        btn('daichari-backward', '後ろへ5マス', 'warn') +
-                        btn('cancel-target', '取消', 'warn');
-                } else {
-                    h += '<span class="tag" id="targetNote">対象の敵をタップ</span>' + btn('cancel-target', '取消', 'warn');
-                }
+                h += '<span class="tag" id="targetNote">前歯の行き先を選択</span>' + btn('cancel-target', '取消', 'warn');
+            } else if (APP.target && APP.aimKind) {
+                h += '<span class="tag" id="targetNote">' + (AIM_TXT[APP.aimKind] || '対象を選択') + '</span>' + btn('cancel-target', '取消', 'warn');
             } else if (sel && mine) {
                 var aw = activeWeaponOf(sel);
                 if (aw) {
-                    var lim = weaponUseLimit(aw);
-                    var left = lim ? Math.max(0, lim - weaponUsedCount(g, sel.team, aw.id)) : null;
-                    var label = '⚡ ' + aw.name;
-                    if (aw.id === 'comic') label += sel.comicReady ? ' 発動' : ' 宣言';
-                    if (left !== null) label += ' 残' + left;
-                    h += btn(aw.id === 'maeba' ? 'maeba' : 'usewp', label, 'warn');
+                    var label;
+                    if (aw.id === 'maeba') label = sel.maebaReady ? '🦷 前歯で突進' : '🦷 前歯を宣言';
+                    else if (aw.id === 'nonoka') label = '💣 ノノカを宣言';
+                    else label = '⚡ ' + aw.name;
+                    h += btn('usewp', label, 'warn');
                 }
             }
+            h += btn('eq-open', '装備', '');
             h += btn('log-open', 'ログ', '');
             h += btn('end', 'ターン終了', 'primary', !mine);
         } else {
+            h += btn('eq-open', '装備', '');
             h += btn('log-open', 'ログ', '');
             h += btn('result', '結果', '');
             if (APP.mode === 'online') {
@@ -3992,7 +4316,65 @@ if (typeof module !== 'undefined' && module.exports) {
         bar.innerHTML = h;
     }
 
+    /* この画面で村上の宣言をしてよいか（自分の側の村上か） */
+    function canDeclarePakuri(pk) {
+        if (!pk) return false;
+        if (APP.mode === 'local') return true;
+        return pk.team === APP.myTeam;
+    }
+    function renderPakuri() {
+        var modal = $('pakuriModal');
+        if (!modal) return;
+        var g = APP.g;
+        var pk = (g && g.phase === 'play') ? RULES.pendingPakuri(g) : null;
+        if (!pk || !canDeclarePakuri(pk)) { modal.classList.add('hidden'); return; }
+        var h = '<p class="small">試合開始前の宣言です。<b class="' + pk.team + '">' + JPN[pk.team] + '</b> <b>' + esc(pk.name) + '</b> がコピーする武器を選んでください。' +
+            'この試合で誰かが装備している武器から選べます。</p>';
+        RULES.pakuriChoices(g).forEach(function(id) {
+            var w = WP[id];
+            var own = g.soldiers.filter(function(o) { return o.wp === id; }).map(function(o) { return JPN[o.team] + o.name; }).join('・');
+            h += '<button class="pk" data-act="pk-' + id + '">' + rarBadge(w.rarity) + '<b>' + esc(w.name) + '</b> <span class="own">（' + esc(own) + ' が装備）</span>' +
+                '<span class="ds">' + esc(w.desc) + '</span></button>';
+        });
+        $('pakuriBody').innerHTML = h;
+        modal.classList.remove('hidden');
+    }
+    function renderEquip() {
+        var modal = $('eqModal');
+        if (!modal) return;
+        var g = APP.g;
+        modal.classList.toggle('hidden', !(APP.eqOpen && g));
+        if (!APP.eqOpen || !g) return;
+        var h = '<p class="small mut">両軍の誰が何を装備しているかは公開情報です。✝は撃破済み。</p>';
+        var order = (APP.mode === 'local') ? ['blue', 'red'] : [APP.myTeam, OTHER[APP.myTeam]];
+        order.forEach(function(t) {
+            var who = (APP.mode === 'local') ? '' : (t === APP.myTeam ? '（あなた）' : '（相手）');
+            h += '<div class="eqTeam"><h4><b class="' + t + '">' + JPN[t] + '</b>・チーム' + esc(g.letters[t]) + who + '</h4>';
+            RULES.loadout(g, t).forEach(function(r) {
+                var st = [];
+                if (!r.alive) st.push('撃破');
+                if (r.spent) st.push('使用済み');
+                if (r.armed) st.push('宣言中');
+                h += '<div class="eqRow' + (r.alive ? '' : ' dead') + '"><span class="who">' + (r.alive ? '' : '✝') + esc(r.name) + RULES.roleGlyph(r.role) + '</span>' +
+                    '<span class="what">' + (r.wp ? rarBadge(r.rarity) + esc(r.label) : '<span class="mut">装備なし</span>') + '</span>' +
+                    '<span class="st">' + st.join('・') + '</span></div>';
+            });
+            h += '</div>';
+        });
+        $('eqBody').innerHTML = h;
+    }
+    /* 村上の宣言が進んだあと：AIの番ならAIが宣言し、全員済んだらAIの手番を始める */
+    function pakuriProgress() {
+        var g = APP.g;
+        if (!g) return;
+        if (APP.mode === 'cpu' && window.SMART && window.SMART.declarePakuri) window.SMART.declarePakuri(g, APP.cpuTeam);
+        renderAll();
+        if (APP.mode === 'cpu' && !RULES.pendingPakuri(g) && g.phase === 'play' && g.activeTeam === APP.cpuTeam && !APP.thinking) scheduleCpu();
+    }
+
     function renderLog() {
+        renderPakuri();
+        renderEquip();
         var el = $('logEl');
         var modal = $('logModal');
         if (modal) modal.classList.toggle('hidden', !APP.logOpen);
@@ -4043,6 +4425,9 @@ if (typeof module !== 'undefined' && module.exports) {
         ['A', 'B', 'C'].forEach(function (x) {
             var el = $('cpuL' + x); if (el) el.classList.toggle('on', APP.cpuOpt.letter === x);
         });
+        [['cpuAA', 'auto'], ['cpuAM', 'manual']].forEach(function (p) {
+            var el = $(p[0]); if (el) el.classList.toggle('on', APP.cpuOpt.aiPick === p[1]);
+        });
     }
 
     function renderWait() {
@@ -4092,7 +4477,21 @@ if (typeof module !== 'undefined' && module.exports) {
 
     /* ---------- アクション分配 ---------- */
     function dispatch(act) {
+        /* 村上のコピー宣言 */
+        if (act.indexOf('pk-') === 0) {
+            var pkS = APP.g ? RULES.pendingPakuri(APP.g) : null;
+            if (!pkS || !canDeclarePakuri(pkS)) return;
+            var pr = RULES.declarePakuri(APP.g, pkS.sid, act.slice(3));
+            if (!pr.ok) { hint(pr.err); return; }
+            markDirty(true);
+            pakuriProgress();
+            return;
+        }
         /* 自軍バーの駒：その駒へジャンプして選択 */
+        if (act.indexOf('pb-') === 0 && APP.target && APP.aimKind === 'allyF') {
+            handleAimTap({ pid: act.slice(3) });
+            return;
+        }
         if (act.indexOf('pb-') === 0) {
             var sid = act.slice(3);
             var sp = RULES.getS(APP.g, sid);
@@ -4246,9 +4645,7 @@ if (typeof module !== 'undefined' && module.exports) {
                 useWeaponUI();
                 break;
             case 'cancel-target':
-                APP.target = null;
-                APP.targetVictim = null;
-                APP.maebaAim = null;
+                clearAim();
                 renderAll();
                 break;
             case 'log-open':
@@ -4259,11 +4656,18 @@ if (typeof module !== 'undefined' && module.exports) {
                 APP.logOpen = false;
                 renderAll();
                 break;
-            case 'daichari-forward':
-                if (APP.target && APP.targetVictim) applyWeapon(APP.target, APP.targetVictim, 'forward');
+            case 'eq-open':
+                APP.eqOpen = true;
+                renderAll();
                 break;
-            case 'daichari-backward':
-                if (APP.target && APP.targetVictim) applyWeapon(APP.target, APP.targetVictim, 'backward');
+            case 'eq-close':
+                APP.eqOpen = false;
+                renderAll();
+                break;
+            case 'cpu-aipick-auto':
+            case 'cpu-aipick-manual':
+                APP.cpuOpt.aiPick = act.slice('cpu-aipick-'.length);
+                renderCpuOpts();
                 break;
             case 'squad-done':
                 squadDone();
@@ -4599,58 +5003,72 @@ function evalState(g, team) {
 }
 
 // ---------- active weapon usage ----------
+/* 武器ごとの「持っている駒の価値」への上乗せ（AIの駒評価・村上のコピー先選び・おまかせ編成で使う） */
+const WEAPON_VALUE = {
+  iincho: 1500, charisma: 1100, iemuri: 900, maeba: 850, zutai: 800, nonoka: 650, funnel: 600,
+  toyoko: 500, onnabancho: 480, ikkun: 470, aga: 450, phoenix: 430, virgin: 400, moonwalk: 380,
+  hardgel: 360, daichari: 330, chinbo: 300, ogoru: 260, shuchi: 150, shinasadame: 80, pakuri: 0
+};
 function pieceValue(s) {
   if (!s) return 0;
   let v = s.role === 'flag' ? 9000 : (s.role === 'mega' ? 1700 : 1000);
-  if (s.wp === 'zutai') v += 1600;
-  else if (s.wp === 'charisma') v += 900;
-  else if (s.wp === 'kusanagi') v += 760;
-  else if (s.wp === 'kusaidama' || s.wp === 'phoenix') v += 650;
-  else if (s.wp) v += 260;
+  const e = effWp(s);
+  if (e) v += (WEAPON_VALUE[e] || 200) * (weaponSpent(s, WP[e]) ? 0.25 : 1);
   return v;
 }
-function lockableByGakureki(g, team) {
-  const foe = OTHER[team];
-  return g.soldiers.filter(s => s.alive && s.team === foe && GAKUREKI_FREE.indexOf(s.name) < 0).length;
+/* 村上のコピー先：この試合に出ている武器のうち、最も価値が高いもの */
+function aiPakuriPick(g) {
+  const ch = RULES.pakuriChoices(g);
+  let best = null, bv = -1;
+  ch.forEach(id => { const v = WEAPON_VALUE[id] || 0; if (v > bv) { bv = v; best = id; } });
+  return best;
+}
+function aiDeclarePakuri(g, team) {
+  let p = RULES.pendingPakuri(g);
+  while (p && p.team === team) {
+    const pick = aiPakuriPick(g);
+    if (!pick || !RULES.declarePakuri(g, p.sid, pick).ok) break;
+    p = RULES.pendingPakuri(g);
+  }
 }
 function weaponThreshold(tactic, afterMove) {
   const base = { rush: 95, guard: 155, stealth: 105, annihilate: 80, honden: 85 };
   return (base[tactic] || 115) + (afterMove ? 30 : 0);
+}
+/* 同じ階の廊下にいて、自分から見えている駒（ノノカの見積もり用。見えない駒は数えない） */
+function corridorPiecesOnFloor(g, fl, vis) {
+  return g.soldiers.filter(v => v.alive && SQ[v.pos].kind === 'corridor' && SQ[v.pos].floor === fl && vis.has(v.pos));
 }
 function weaponActionCandidates(g, team, tactic) {
   const foe = OTHER[team];
   const vis = RULES.visibleSquares(g, team);
   const out = [];
   aliveList(g, team).forEach(s => {
-    if (!s.wp) return;
-    const w = WP[s.wp];
+    const e = effWp(s);
+    const w = e ? WP[e] : null;
     if (!w || w.kind !== 'active') return;
-    if (weaponSpent(g, team, w)) return;
-    if (w.id === 'hardgel') {
+    if (weaponSpent(s, w) || s.frozen || s.nonokaArmed) return;
+    if (w.id === 'hardgel' || w.id === 'daichari') {
       g.soldiers.forEach(v => {
-        if (v.alive && v.team === foe && v.sex === 'F' && vis.has(v.pos)) {
-          out.push({ kind: 'use', sid: s.sid, wp: w.id, targetSid: v.sid });
-        }
+        if (!v.alive || v.team !== foe || !vis.has(v.pos)) return;
+        if (w.id === 'daichari' && (SQ[v.pos].kind === 'T' || !corrIndex(v.pos))) return;
+        out.push({ kind: 'use', sid: s.sid, wp: w.id, target: v.sid });
       });
-    } else if (w.id === 'daichari') {
+    } else if (w.id === 'shuchi') {
+      const dests = RULES.shuchiDests(g, s);
       g.soldiers.forEach(v => {
-        if (v.alive && v.team === foe && SQ[v.pos].kind !== 'T' && corrIndex(v.pos) && vis.has(v.pos)) {
-          out.push({ kind: 'use', sid: s.sid, wp: w.id, targetSid: v.sid, direction: 'forward' });
-          out.push({ kind: 'use', sid: s.sid, wp: w.id, targetSid: v.sid, direction: 'backward' });
-        }
+        if (!v.alive || v.team !== team || v.sid === s.sid || v.sex !== 'F') return;
+        dests.forEach(d => out.push({ kind: 'use', sid: s.sid, wp: w.id, target: v.sid, extra: d }));
       });
-    } else if (w.id === 'fuhou') {
-      if (g.soldiers.some(v => v.alive && v.team === foe && SQ[v.pos].kind === 'T')) {
-        out.push({ kind: 'use', sid: s.sid, wp: w.id });
-      }
-    } else if (w.id === 'gakureki') {
-      if (lockableByGakureki(g, team) > 0) out.push({ kind: 'use', sid: s.sid, wp: w.id });
-    } else if (w.id === 'comic') {
-      if (floorOfPos(s.pos) && (s.comicReady || !s.comicDeclared)) out.push({ kind: 'use', sid: s.sid, wp: w.id, declaring: !s.comicReady });
-    } else if (w.id === 'funnel') {
-      if (aliveList(g, foe).length) out.push({ kind: 'use', sid: s.sid, wp: w.id });
     } else if (w.id === 'maeba') {
-      RULES.maebaTargets(g, s.sid).forEach(to => out.push({ kind: 'maebaMove', sid: s.sid, wp: w.id, targetPos: to }));
+      if (s.maebaReady) RULES.maebaTargets(g, s.sid).forEach(to => out.push({ kind: 'use', sid: s.sid, wp: w.id, target: to }));
+      else if (!s.maebaDeclared && corrIndex(s.pos)) out.push({ kind: 'use', sid: s.sid, wp: w.id, declaring: true });
+    } else if (w.id === 'nonoka') {
+      if (corrIndex(s.pos)) out.push({ kind: 'use', sid: s.sid, wp: w.id, declaring: true });
+    } else if (w.id === 'shinasadame') {
+      /* 情報だけでAIの判断材料にはならないので使わない */
+    } else {
+      out.push({ kind: 'use', sid: s.sid, wp: w.id });   // funnel / iemuri / ogoru
     }
   });
   return out;
@@ -4659,46 +5077,54 @@ function scoreWeaponAction(g, action, team, tactic) {
   const s = RULES.getS(g, action.sid);
   if (!s) return -1e18;
   const foe = OTHER[team];
+  const vis = RULES.visibleSquares(g, team);
   if (action.wp === 'funnel') {
     const enemies = aliveList(g, foe);
     if (!enemies.length) return -1e18;
-    const avg = enemies.reduce((sum, v) => sum + pieceValue(v), 0) / enemies.length;
-    const flagChance = enemies.some(v => v.role === 'flag') ? (1 / enemies.length) : 0;
-    const behind = RULES.aliveCount(g, team) < RULES.aliveCount(g, foe) ? 520 : 0;
+    const n = enemies.length + FUNNEL_BLANKS;
+    const avg = enemies.reduce((sum, v) => sum + pieceValue(v), 0) / n;
+    const flagChance = enemies.some(v => v.role === 'flag') ? (1 / n) : 0;
+    const behind = RULES.aliveCount(g, team) < RULES.aliveCount(g, foe) ? 420 : 0;
     return avg - pieceValue(s) + flagChance * 6500 + behind;
   }
-  if (action.wp === 'gakureki') {
-    return lockableByGakureki(g, team) * 420 + (tactic === 'guard' ? 140 : 0);
+  if (action.wp === 'iemuri') {
+    /* 潜伏者の数は分からないので「見えていない敵の数」から期待値を見積もる */
+    const unseen = aliveList(g, foe).filter(v => !vis.has(v.pos)).length;
+    return unseen >= 2 ? unseen * 170 - 120 : -1e18;
   }
-  if (action.wp === 'comic' && action.declaring) {
-    const fl = floorOfPos(s.pos);
-    const victims = g.soldiers.filter(v => v.alive && v.role === 'soldier' && floorOfPos(v.pos) === fl);
-    let swing = 0;
-    victims.forEach(v => { swing += (v.team === team ? -pieceValue(v) : pieceValue(v)) * 0.22; });
-    return swing + (tactic === 'annihilate' ? 180 : 0) + (tactic === 'stealth' ? 70 : 0);
+  if (action.wp === 'ogoru') {
+    const n = aliveList(g, team).filter(v => v.year === 80 && !v.frozen).length;
+    return n >= 3 ? n * 55 : -1e18;
+  }
+  if (action.wp === 'maeba' && action.declaring) {
+    return 120 + (tactic === 'rush' || tactic === 'honden' ? 80 : 0);
+  }
+  if (action.wp === 'nonoka') {
+    const c = corrIndex(s.pos);
+    if (!c) return -1e18;
+    let swing = -pieceValue(s);
+    corridorPiecesOnFloor(g, c.floor, vis).forEach(v => {
+      if (v.sid === s.sid) return;
+      swing += (v.team === team ? -pieceValue(v) : pieceValue(v)) * 0.6;
+    });
+    return swing + (tactic === 'annihilate' ? 150 : 0);
   }
   const before = evalState(g, team);
   const gc = clone(g);
-  let r;
-  if (action.kind === 'maebaMove') r = RULES.maebaMove(gc, action.sid, action.targetPos);
-  else r = RULES.useWeapon(gc, action.sid, action.targetSid || null, action.direction);
+  const r = RULES.useWeapon(gc, action.sid, action.target || null, action.extra || null);
   if (!r || !r.ok) return -1e18;
   let sc = evalState(gc, team) - before;
   if (gc.phase === 'over' && gc.winner === team) sc += 1e7;
-  if (action.targetSid) sc += pieceValue(RULES.getS(g, action.targetSid)) * (action.wp === 'hardgel' ? 0.22 : 0.08);
-  if (action.wp === 'fuhou') {
-    sc += g.soldiers.filter(v => v.alive && v.team === foe && SQ[v.pos].kind === 'T').length * 280;
-  }
-  if (action.wp === 'comic') {
-    const fl = floorOfPos(s.pos);
-    const victims = g.soldiers.filter(v => v.alive && v.role === 'soldier' && floorOfPos(v.pos) === fl);
-    victims.forEach(v => { sc += (v.team === team ? -pieceValue(v) : pieceValue(v)) * 0.35; });
-  }
+  if (gc.phase === 'over' && gc.winner === foe) sc -= 1e7;
+  if (action.wp === 'hardgel') sc += pieceValue(RULES.getS(g, action.target)) * 0.2;
+  if (action.wp === 'daichari') sc += 20;
   return sc;
 }
 function useTacticalWeapons(g, team, mem, opts) {
   if (!g || g.phase !== 'play' || g.activeTeam !== team) return [];
   opts = opts || {};
+  aiDeclarePakuri(g, team);
+  if (RULES.pendingPakuri(g)) return [];
   const used = [];
   const tactic = opts.tactic || 'balanced';
   const maxActions = opts.maxActions || 2;
@@ -4710,9 +5136,9 @@ function useTacticalWeapons(g, team, mem, opts) {
       if (sc > bestScore) { bestScore = sc; best = a; }
     }
     if (!best || bestScore < weaponThreshold(tactic, opts.afterMove)) break;
-    const r = best.kind === 'maebaMove' ? RULES.maebaMove(g, best.sid, best.targetPos) : RULES.useWeapon(g, best.sid, best.targetSid || null, best.direction);
+    const r = RULES.useWeapon(g, best.sid, best.target || null, best.extra || null);
     if (!r || !r.ok) break;
-    used.push({ wp: best.wp, sid: best.sid, targetSid: best.targetSid || null, targetPos: best.targetPos || null, direction: best.direction || null, score: bestScore });
+    used.push({ wp: best.wp, sid: best.sid, target: best.target || null, extra: best.extra || null, declaring: !!best.declaring, score: bestScore });
     updateMemory(g, team, mem || {});
   }
   return used;
@@ -4896,6 +5322,9 @@ function smartAct(g, team, mem, level, opts) {
 }
 window.JINPO_SMART = {
   act: smartAct,
+  declarePakuri: aiDeclarePakuri,
+  pakuriPick: aiPakuriPick,
+  WEAPON_VALUE,
   makeSmartAgent,
   weakAct,
   runPolicy,
@@ -4910,7 +5339,8 @@ window.JINPO_SMART = {
 window.SMART = {
   act: function (g, team, mem, level, opts) {
     return smartAct(g, team, mem, level, opts);
-  }
+  },
+  declarePakuri: aiDeclarePakuri
 };
 })();
 </script>

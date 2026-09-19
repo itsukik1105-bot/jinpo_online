@@ -98,7 +98,7 @@ function loadEngine(rand) {
   const core = main.slice(coreStart, coreEnd);
   const expose = `
 window.__JINPO_CORE__ = {
-  SQ, ADJ, BROKEN_WALL_LINKS, ROSTER, SQUADS, WEAPONS, WP, GAKUREKI_FREE,
+  SQ, ADJ, BROKEN_WALL_LINKS, ROSTER, SQUADS, WEAPONS, WP, effWp,
   rosterOf, memberOf, fixedOf, freeRoster, weaponsFor,
   RULES, OTHER, JPN, floorOfPos, corrIndex, forwardSign, adjacentSquares, kusanagiWallsBroken
 };`;
@@ -120,12 +120,12 @@ window.__JINPO_CORE__ = {
 
 function instrumentRules(RULES) {
   const origUse = RULES.useWeapon;
-  RULES.useWeapon = function useWeaponWithEvent(g, sid, targetSid, direction) {
+  RULES.useWeapon = function useWeaponWithEvent(g, sid, target, extra) {
     const s = RULES.getS(g, sid);
     const wp = s && s.wp;
     const team = s && s.team;
     const name = s && s.name;
-    const r = origUse(g, sid, targetSid, direction);
+    const r = origUse(g, sid, target, extra);
     if (r && r.ok && team && wp) {
       g.simEvents = g.simEvents || [];
       g.simEvents.push({
@@ -134,31 +134,9 @@ function instrumentRules(RULES) {
         sid,
         name,
         team,
-        targetSid: targetSid || null,
-        direction: direction || null,
-        stage: r.declared ? 'declare' : (r.activated ? 'activate' : null),
-        turn: g.turn,
-        round: Math.ceil(g.turn / 2)
-      });
-    }
-    return r;
-  };
-  const origMaeba = RULES.maebaMove;
-  RULES.maebaMove = function maebaMoveWithEvent(g, sid, to) {
-    const s = RULES.getS(g, sid);
-    const team = s && s.team;
-    const name = s && s.name;
-    const r = origMaeba(g, sid, to);
-    if (r && r.ok && team) {
-      g.simEvents = g.simEvents || [];
-      g.simEvents.push({
-        type: 'weapon_move',
-        wp: 'maeba',
-        sid,
-        name,
-        team,
-        targetSid: null,
-        targetPos: to || null,
+        target: target || null,
+        direction: null,
+        stage: r.declared ? 'declare' : null,
         turn: g.turn,
         round: Math.ceil(g.turn / 2)
       });
@@ -183,11 +161,11 @@ function pick(a, rand) {
 
 function weaponWeight(id, tactic) {
   const table = {
-    rush: { moonwalk: 7, charisma: 6, maeba: 6, kusanagi: 6, daichari: 4, zutai: 4, sennichi: 3, funnel: 3 },
-    guard: { kusaidama: 7, phoenix: 6, gakureki: 6, hardgel: 5, zutai: 5, kusanagi: 5, charisma: 4, virgin: 3 },
-    stealth: { fuhou: 7, kusanagi: 7, comic: 5, virgin: 5, onnabancho: 3, gakureki: 3 },
-    annihilate: { comic: 8, chinbo: 7, funnel: 6, kusanagi: 6, hardgel: 5, daichari: 5, charisma: 4 },
-    honden: { moonwalk: 8, charisma: 7, maeba: 7, kusanagi: 6, zutai: 4, sennichi: 4, daichari: 3 }
+    rush: { iincho: 7, charisma: 7, maeba: 7, zutai: 6, moonwalk: 5, ogoru: 4, daichari: 4, funnel: 3 },
+    guard: { iincho: 8, toyoko: 6, phoenix: 6, ikkun: 5, aga: 5, hardgel: 5, virgin: 4, onnabancho: 4 },
+    stealth: { iemuri: 7, toyoko: 7, shinasadame: 4, virgin: 4, onnabancho: 4, pakuri: 4, hardgel: 3 },
+    annihilate: { nonoka: 8, iemuri: 7, chinbo: 6, funnel: 6, ikkun: 5, hardgel: 4, charisma: 4 },
+    honden: { maeba: 8, charisma: 7, zutai: 6, moonwalk: 6, iincho: 5, ogoru: 4, shuchi: 3 }
   };
   return ((table[tactic] && table[tactic][id]) || 1);
 }
@@ -330,6 +308,9 @@ function playGame(engine, opts, config, gameIndex, rand) {
   const g = RULES.newGame(bluePlace, redPlace, config.first, { blue: config.blueTeam, red: config.redTeam });
   g.simEvents = [];
   const mem = { blue: {}, red: {} };
+  for (let i = 0; i < 4 && RULES.pendingPakuri(g); i++) {
+    engine.SMART.declarePakuri(g, RULES.pendingPakuri(g).team);
+  }
   let safety = 0;
   while (g.phase === 'play' && safety++ < 64) {
     const side = g.activeTeam;
