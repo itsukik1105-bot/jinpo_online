@@ -266,6 +266,17 @@ body.gameScreen #hint{bottom:calc(58px + env(safe-area-inset-bottom))}
 #pakuriBody .pk{display:block;width:100%;text-align:left;margin:6px 0;padding:10px 12px;line-height:1.45}
 #pakuriBody .pk .ds{display:block;font-size:11.5px;color:#c6cdd5;margin-top:3px}
 #pakuriBody .own{font-size:11px;color:var(--mut)}
+/* 装備図鑑 */
+#scrWeapons{max-width:680px;margin:0 auto}
+#bookFilter{display:flex;gap:5px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:6px 0 10px;position:sticky;top:calc(52px + env(safe-area-inset-top));z-index:5;
+  background:var(--bg);padding:6px 0}
+#bookFilter::-webkit-scrollbar{display:none}
+#bookFilter button{flex:0 0 auto;min-height:40px;padding:5px 9px;display:flex;align-items:center;gap:5px}
+#bookFilter button .n{font-size:11px;color:var(--mut)}
+#bookFilter button.on .n{color:#f5e6bd}
+#bookFilter .rar{margin-right:0}
+.wpRef .tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+.wpRef .tags .kd{margin-left:0}
 </style>
 </head>
 <body>
@@ -343,6 +354,15 @@ body.gameScreen #hint{bottom:calc(58px + env(safe-area-inset-bottom))}
   <button id="btnGoCreate" data-act="go-create" class="primary big">🏠 部屋を作る（オンライン対戦）</button>
   <button id="btnGoJoin" data-act="go-join" class="big">🔑 部屋コードで参加</button>
   <button data-act="go-cpu" class="big">🤖 AIと対戦（ひとりで遊ぶ）</button>
+  <button data-act="go-weapons" class="big">📖 装備図鑑（全21種の効果）</button>
+</section>
+
+<section id="scrWeapons" class="screen hidden">
+  <h2>📖 装備図鑑</h2>
+  <p class="lead">全21種の装備品と効果の一覧です。どの装備も誰でも装備できます（1つの装備を自軍で2人は持てません）。</p>
+  <div id="bookFilter"></div>
+  <div id="bookList"></div>
+  <button data-act="home" class="ghost">← ホームへ戻る</button>
 </section>
 
 <section id="scrCreate" class="screen hidden">
@@ -781,7 +801,7 @@ const WEAPONS = [
       desc: 'この試合で誰かが装備している武器を1つコピーして使用できる。試合開始前にコピー先を宣言する。' },
     { id: 'maeba',     rarity: 'SSR', name: '平井の人造前歯',               kind: 'active',   declare: true, target: 'square',
       desc: '使用する前のターンに宣言が必要。宣言した次の自分のターン、相手陣地に向かって同じ縦列を何マスでも一気に進める。進路上の敵は撃破。何度でも使える。' },
-    { id: 'iemuri',    rarity: 'SSR', name: 'ごめん今日家無理だわ',         kind: 'active',   once: true,
+    { id: 'iemuri',    rarity: 'SSR', name: '門間の「ごめん今日家無理だわ」',         kind: 'active',   once: true,
       desc: '発動すると、潜伏している敵プレイヤーが全員死亡する。1ゲームに1回のみ。' },
     { id: 'aga',       rarity: 'SR',  name: '江口のAGA治療薬',              kind: 'reactive',
       desc: '殺された時、この装備と殺したキャラの装備を交換する。受け取った相手は外せず、受け渡された後は何の効力もないカードになる。' },
@@ -813,7 +833,7 @@ const WEAPONS = [
       desc: '宣言した1ターン後、自分の死と引き換えに、同じ通り（AとB／CとD）にいる潜伏していない全てのプレイヤーを敵味方問わず破壊する。宣言後は行動できない。1ゲームに1回のみ。' },
     { id: 'chinbo',    rarity: 'R',   name: '吉岡の珍棒',                   kind: 'passive',
       desc: 'この駒が行動する時、対象が女の場合に限り、周囲1マスまで攻撃が届く。' },
-    { id: 'ogoru',     rarity: 'R',   name: 'ああ、ここは俺が奢るわ',       kind: 'active',   once: true,
+    { id: 'ogoru',     rarity: 'R',   name: '金澤の「ここは俺が奢るわ」',       kind: 'active',   once: true,
       desc: '自分チームの80期の行動マスを、このターンだけ+1する。1ゲームに1回のみ。' },
     { id: 'shinasadame', rarity: 'R', name: '品定め',                       kind: 'active',   once: true, target: 'room',
       desc: '好きな部屋（潜伏所T1〜T16・大部屋X・Y）を1つ選び、そこに誰がいるかを確認できる。1ゲームに1回のみ。' }
@@ -1442,7 +1462,7 @@ const RULES = (function() {
             markWeaponUsed(s, 'iemuri');
             const hid = g.soldiers.filter(function(o) { return o.alive && o.team === foe && SQ[o.pos].kind === 'T'; });
             setPop(g, 'iemuri', s, hid.length ? hid.length + '人が死亡' : '誰も潜伏していなかった');
-            g.log.push('🏠 ごめん今日家無理だわ！ 潜伏中の' + JPN[foe] + 'は全員死亡' + (hid.length ? '' : '……誰も潜伏していなかった'));
+            g.log.push('🏠 ' + w.name + '！ 潜伏中の' + JPN[foe] + 'は全員死亡' + (hid.length ? '' : '……誰も潜伏していなかった'));
             hid.forEach(function(o) {
                 killPiece(g, o, '　→ ' + plbl(o) + ' が ' + o.pos + ' で死亡した', { killer: s });
             });
@@ -1471,7 +1491,7 @@ const RULES = (function() {
             const who = g.soldiers.filter(function(o) { return o.alive && o.team === s.team && o.year === 80 && !o.frozen && !o.nonokaArmed; });
             who.forEach(function(o) { o.steps += 1; });
             setPop(g, 'ogoru', s, who.length ? '80期 ' + who.length + '人が+1' : '80期がいない');
-            g.log.push('🍻 ああ、ここは俺が奢るわ！ ' + JPN[s.team] + 'の80期（' + (who.map(function(o) { return o.name; }).join('・') || 'なし') + '）の行動マスが今ターン+1');
+            g.log.push('🍻 ' + w.name + '！ ' + JPN[s.team] + 'の80期（' + (who.map(function(o) { return o.name; }).join('・') || 'なし') + '）の行動マスが今ターン+1');
             trimLog(g); return { ok: true };
         }
         if (w.id === 'shinasadame') {
@@ -2323,7 +2343,7 @@ if (typeof module !== 'undefined' && module.exports) {
     }
 
     /* ---------- 画面 ---------- */
-    var SCREENS = ['scrHome', 'scrCreate', 'scrJoin', 'scrWait', 'scrGame', 'scrCpu', 'scrSquad'];
+    var SCREENS = ['scrHome', 'scrCreate', 'scrJoin', 'scrWait', 'scrGame', 'scrCpu', 'scrSquad', 'scrWeapons'];
 
     function syncBodyMode() {
         if (!document.body) return;
@@ -3398,6 +3418,37 @@ if (typeof module !== 'undefined' && module.exports) {
 
     /* ---------- 装備品リファレンス（自分のチームの全性能） ---------- */
     var KIND_JP = { passive: '常時', active: '任意発動', reactive: '条件発動', copy: 'コピー', flavor: '効果なし' };
+    /* 武器1件の説明カード（編成画面のリファレンスと装備図鑑で共通） */
+    function weaponItemHtml(w, note) {
+        var lim = weaponUseLimit(w);
+        var tags = [KIND_JP[w.kind]];
+        if (lim) tags.push(lim + '回のみ');
+        if (w.declare) tags.push('要宣言');
+        if (w.target) tags.push({ enemy: '相手を選ぶ', allyF: '味方の女子を選ぶ', room: '部屋を選ぶ', square: '行き先を選ぶ' }[w.target]);
+        return '<div class="item"><div>' + rarBadge(w.rarity) + '<span class="nm">' + esc(w.name) + '</span></div>' +
+            '<div class="tags">' + tags.map(function(t) { return '<span class="kd">' + esc(t) + '</span>'; }).join('') + '</div>' +
+            '<div class="ds">' + esc(w.desc) + '</div>' + (note || '') + '</div>';
+    }
+    /* ---------- 装備図鑑 ---------- */
+    function renderWeaponsBook() {
+        var f = APP.bookFilter || 'all';
+        var chips = [['all', 'すべて']].concat(['UR', 'SSR', 'SR', 'R'].map(function(r) { return [r, r]; }));
+        $('bookFilter').innerHTML = chips.map(function(c) {
+            var n = c[0] === 'all' ? WEAPONS.length : WEAPONS.filter(function(w) { return w.rarity === c[0]; }).length;
+            return '<button data-act="book-' + c[0] + '" class="' + (f === c[0] ? 'on' : '') + '">' +
+                (c[0] === 'all' ? '' : rarBadge(c[0])) + (c[0] === 'all' ? c[1] : '') + '<span class="n">' + n + '</span></button>';
+        }).join('');
+        var h = '';
+        ['UR', 'SSR', 'SR', 'R'].forEach(function(r) {
+            if (f !== 'all' && f !== r) return;
+            var list = WEAPONS.filter(function(w) { return w.rarity === r; });
+            h += '<div class="wpRef"><h4>' + rarBadge(r) + { UR: 'ウルトラレア', SSR: 'ダブルスーパーレア', SR: 'スーパーレア', R: 'レア' }[r] + '（' + list.length + '種）</h4>';
+            list.forEach(function(w) { h += weaponItemHtml(w); });
+            h += '</div>';
+        });
+        $('bookList').innerHTML = h;
+    }
+
     function renderWpRef() {
         var el = $('wpRefBox');
         if (!el) return;
@@ -3413,12 +3464,7 @@ if (typeof module !== 'undefined' && module.exports) {
             if (!list.length) return;
             h += '<h5>' + rarBadge(r) + list.length + '種</h5>';
             list.forEach(function(w) {
-                var lim = weaponUseLimit(w);
-                h += '<div class="item"><div>' + rarBadge(w.rarity) + '<span class="nm">' + esc(w.name) + '</span>' +
-                    '<span class="kd">' + KIND_JP[w.kind] + (lim ? '・' + lim + '回' : '') + (w.declare ? '・要宣言' : '') + '</span></div>' +
-                    '<div class="ds">' + esc(w.desc) + '</div>' +
-                    (owner[w.id] ? '<div class="ow">→ ' + esc(owner[w.id]) + ' が装備中</div>' : '') +
-                    '</div>';
+                h += weaponItemHtml(w, owner[w.id] ? '<div class="ow">→ ' + esc(owner[w.id]) + ' が装備中</div>' : '');
             });
         });
         h += '</div>';
@@ -4537,6 +4583,19 @@ if (typeof module !== 'undefined' && module.exports) {
                 break;
             case 'go-local':
                 startLocal();
+                break;
+            case 'go-weapons':
+                showScreen('scrWeapons');
+                renderWeaponsBook();
+                window.scrollTo(0, 0);
+                break;
+            case 'book-all':
+            case 'book-UR':
+            case 'book-SSR':
+            case 'book-SR':
+            case 'book-R':
+                APP.bookFilter = act.slice(5);
+                renderWeaponsBook();
                 break;
             case 'go-cpu':
                 showScreen('scrCpu');
