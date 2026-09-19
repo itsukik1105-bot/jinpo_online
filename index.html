@@ -266,6 +266,7 @@ body.gameScreen #hint{bottom:calc(58px + env(safe-area-inset-bottom))}
 #pakuriBody .pk{display:block;width:100%;text-align:left;margin:6px 0;padding:10px 12px;line-height:1.45}
 #pakuriBody .pk .ds{display:block;font-size:11.5px;color:#c6cdd5;margin-top:3px}
 #pakuriBody .own{font-size:11px;color:var(--mut)}
+.waitNote{background:#2a2517;border:1px solid var(--gold);color:#f5e6bd;border-radius:8px;padding:10px 12px;margin:8px 0;font-size:12.5px;line-height:1.6}
 /* 装備図鑑 */
 #scrWeapons{max-width:680px;margin:0 auto}
 #bookFilter{display:flex;gap:5px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:6px 0 10px;position:sticky;top:calc(52px + env(safe-area-inset-top));z-index:5;
@@ -359,7 +360,7 @@ body.gameScreen #hint{bottom:calc(58px + env(safe-area-inset-bottom))}
 
 <section id="scrWeapons" class="screen hidden">
   <h2>📖 装備図鑑</h2>
-  <p class="lead">全21種の装備品と効果の一覧です。どの装備も誰でも装備できます（1つの装備を自軍で2人は持てません）。</p>
+  <p class="lead">全21種の装備品と効果の一覧です。石井・関原・小野寺の専用武器を除き、誰でも装備できます。武器は両軍を通して1個ずつです。</p>
   <div id="bookFilter"></div>
   <div id="bookList"></div>
   <button data-act="home" class="ghost">← ホームへ戻る</button>
@@ -792,7 +793,8 @@ function sexJP(s) { return s === 'F' ? '女' : '男'; }
    once   : 1ゲーム1回のみ
    target : 発動時に選ぶもの（'enemy'=見えている敵 / 'allyF'=味方の女子 / 'room'=部屋 / 'square'=移動先）
    declare: 前のターンに宣言が必要
-   チーム・個人による装備制限はありません（誰でも装備可能） */
+   only   : その個人しか装備できない専用武器（石井・関原・小野寺の3つ）
+   チームによる装備制限はありません。武器は両軍を通して1個ずつ */
 const RARITY_ORDER = { UR: 0, SSR: 1, SR: 2, R: 3 };
 const WEAPONS = [
     { id: 'iincho',    rarity: 'UR',  name: '委員長の威厳',                 kind: 'passive',
@@ -813,11 +815,11 @@ const WEAPONS = [
       desc: 'この駒が取られた時、取った相手の駒も道連れにする。' },
     { id: 'shuchi',    rarity: 'SR',  name: '酒池クニ林',                   kind: 'active',   once: true, target: 'allyF',
       desc: '味方の女子1人を、自分の縦横1マス隣にワープさせる。1ゲームに1回のみ。' },
-    { id: 'funnel',    rarity: 'R',   name: 'ファンネル石井',               kind: 'active',   once: true,
+    { id: 'funnel',    rarity: 'R',   name: 'ファンネル石井',               kind: 'active',   once: true, only: '石井',
       desc: '自らを生贄に捧げ、相手の駒1人を無作為に撃破する。抽選には3枚のハズレが含まれ、ハズレでも自分は消滅する。1ゲームに1回のみ。' },
-    { id: 'zutai',     rarity: 'R',   name: '図体のでかい関原',             kind: 'passive',
+    { id: 'zutai',     rarity: 'R',   name: '図体のでかい関原',             kind: 'passive', only: '関原',
       desc: 'この駒の行動マスが+2される。ただしこの駒が倒されると、味方の行動マスはゲーム終了まで-1される。' },
-    { id: 'hardgel',   rarity: 'R',   name: '小野寺のハードジェル',         kind: 'active',   once: true, target: 'enemy',
+    { id: 'hardgel',   rarity: 'R',   name: '小野寺のハードジェル',         kind: 'active',   once: true, target: 'enemy', only: '小野寺',
       desc: '選んだ相手の駒を1ターン行動不能にする。1ゲームに1回のみ。' },
     { id: 'moonwalk',  rarity: 'R',   name: '垂見のムーンウォーク',         kind: 'passive',
       desc: 'この駒の行動マスが常に+1される。' },
@@ -876,10 +878,10 @@ function wpLabelOf(s) {
     return wpName(s.wp);
 }
 
-/* 誰でもどの武器でも装備できる（チーム・個人の制限なし） */
+/* 人物 m が装備できる武器：専用武器は本人だけ。それ以外は誰でも */
 function weaponsFor(L, m) {
     if (!m) return [];
-    return WEAPONS.slice();
+    return WEAPONS.filter(function(w) { return !w.only || w.only === m.name; });
 }
 
 /* ===== 通り（フロア）判定 ===== */
@@ -990,12 +992,24 @@ const RULES = (function() {
                 if (!WP[p.wp]) return '不正な装備品';
                 if (seenWp[p.wp]) return wpName(p.wp) + ' を2人が装備しています（武器は1個ずつ）';
                 seenWp[p.wp] = true;
+                if (WP[p.wp].only && WP[p.wp].only !== p.name) return wpName(p.wp) + ' は' + WP[p.wp].only + 'の専用武器です';
             }
         }
         if (roles.soldier !== 6 || roles.mega !== 1 || roles.flag !== 1) return '内訳は プレイヤー6・📣1・🚩1 にしてください';
         return null;
     }
 
+    /* 両軍で重複している武器（武器は両軍を通して1個ずつ） */
+    function weaponConflicts(listA, listB) {
+        const a = {};
+        (listA || []).forEach(function(p) { if (p.wp) a[p.wp] = true; });
+        const out = [];
+        (listB || []).forEach(function(p) { if (p.wp && a[p.wp] && out.indexOf(p.wp) < 0) out.push(p.wp); });
+        return out;
+    }
+    function conflictMsg(ids) {
+        return '両軍で同じ装備があります（' + ids.map(wpName).join('・') + '）。武器は両軍を通して1個ずつです';
+    }
     /* 両軍の装備一覧（誰が何を持っているかは公開情報） */
     function loadout(g, team) {
         return g.soldiers.filter(function(s) { return s.team === team; }).map(function(s) {
@@ -1677,6 +1691,8 @@ const RULES = (function() {
     return {
         plbl,
         activeEffects,
+        weaponConflicts,
+        conflictMsg,
         loadout,
         pakuriChoices,
         pendingPakuri,
@@ -2154,14 +2170,20 @@ Net.prototype.reclaim = async function(code, team, onProgress) {
     };
 };
 /* letter: 自分のチーム(A/B/C)。meta は両者が同時に書き換えると片方が消えるため、
-   各自の配置チャンネルにも載せておく（こちらは自分しか書かないので競合しない） */
-Net.prototype.publishPlace = function(list, ready, letter) {
-    return this.pub('p/' + this.team, {
+   各自の配置チャンネルにも載せておく（こちらは自分しか書かないので競合しない）
+   wps: 自分が編成で選んだ装備品。相手はこれ以外から選ぶ */
+Net.prototype.publishPlace = function(list, ready, letter, wps) {
+    var obj = {
         t: Date.now(),
         ready: !!ready,
         letter: letter || null,
+        wps: wps || [],
         list: list
-    }, true);
+    };
+    /* 中継サーバーからの折り返しを待たずに、自分の状態を手元にも反映する
+       （ホストが最後に準備完了した時、開始判定が古い状態を見てしまうため） */
+    if (this.places && this.team) this.places[this.team] = obj;
+    return this.pub('p/' + this.team, obj, true);
 };
 Net.prototype.publishGame = function(g) {
     g.v = (g.v || 0) + 1;
@@ -2408,6 +2430,27 @@ if (typeof module !== 'undefined' && module.exports) {
         return list.slice().sort(function(a, b) { return RARITY_ORDER[a.rarity] - RARITY_ORDER[b.rarity]; });
     }
     function rarBadge(r) { return r ? '<span class="rar ' + r + '">' + r + '</span>' : ''; }
+    /* 相手側が押さえている武器（武器は両軍を通して1個ずつ）。
+       オンラインは相手が送ってきた編成、AI対戦・1台対戦は手元の相手の編成 */
+    function opponentWps(team) {
+        var foe = OTHER[team], out = {};
+        if (APP.mode === 'online') {
+            var pl = APP.net && APP.net.places ? APP.net.places[foe] : null;
+            ((pl && pl.wps) || []).forEach(function(id) { out[id] = 1; });
+        } else {
+            (APP.squad[foe] || []).forEach(function(sl) { if (sl.wp) out[sl.wp] = 1; });
+        }
+        return out;
+    }
+    /* オンラインでは、ホストが装備を決めるまでゲストは装備を選べない */
+    function waitingForHostWeapons(team) {
+        if (APP.mode !== 'online' || !APP.net || APP.net.host) return false;
+        var pl = APP.net.places ? APP.net.places[OTHER[team]] : null;
+        return !(pl && Array.isArray(pl.wps));
+    }
+    function squadWps(team) {
+        return (APP.squad[team] || []).map(function(sl) { return sl.wp; }).filter(Boolean);
+    }
     /* いま他スロットで使用中の名前／武器 */
     function usedIn(sq, field, exceptIdx) {
         var o = {};
@@ -2439,7 +2482,11 @@ if (typeof module !== 'undefined' && module.exports) {
         }
         var sq = APP.squad[team];
         var freeNames = freeRoster(L);
+        var oppW = opponentWps(team);
+        var waiting = waitingForHostWeapons(team);
         var h = '';
+        if (waiting) h += '<div class="waitNote">⏳ 相手（ホスト）が装備品を選んでいます。決まると、残った装備品から選べるようになります。選手は先に決めておけます。</div>';
+        else if (Object.keys(oppW).length) h += '<div class="small mut">※ 相手が装備している品（' + Object.keys(oppW).map(wpName).join('・') + '）は選べません。武器は両軍を通して1個ずつです。</div>';
         sq.forEach(function(sl, i) {
             var m = memberOf(L, sl.name);
             var isFixed = (sl.role !== 'soldier');
@@ -2459,14 +2506,17 @@ if (typeof module !== 'undefined' && module.exports) {
                 });
                 h += '</select></div>';
             }
-            h += '<div class="slotRow"><label>装備品</label><select data-sq="wp" data-idx="' + i + '">';
+            h += '<div class="slotRow"><label>装備品</label><select data-sq="wp" data-idx="' + i + '"' + (waiting ? ' disabled' : '') + '>';
             h += '<option value=""' + (sl.wp ? '' : ' selected') + '>装備なし</option>';
             weaponsSorted(weaponsFor(L, m)).forEach(function(w) {
-                var dis = usedW[w.id] ? ' disabled' : '';
+                var mineUsed = !!usedW[w.id], oppUsed = !!oppW[w.id];
+                var dis = (mineUsed || oppUsed) ? ' disabled' : '';
                 h += '<option value="' + w.id + '"' + (sl.wp === w.id ? ' selected' : '') + dis + '>' +
-                    '[' + w.rarity + '] ' + esc(w.name) + (usedW[w.id] ? '（使用中）' : '') + '</option>';
+                    '[' + w.rarity + '] ' + esc(w.name) + (w.only ? '（' + w.only + '専用）' : '') +
+                    (oppUsed ? '（相手が使用中）' : mineUsed ? '（使用中）' : '') + '</option>';
             });
             h += '</select></div>';
+            if (sl.wp && oppW[sl.wp]) h += '<div class="ng small">⚠ ' + esc(wpName(sl.wp)) + ' は相手が装備しています。別の装備品を選んでください。</div>';
             var w = sl.wp ? WP[sl.wp] : null;
             h += '<div class="wpNote' + (w ? '' : ' wpNone') + '">' + (w ? rarBadge(w.rarity) + esc(w.desc) : '装備なし') + '</div>';
             h += '<div class="sqPreview">' + esc(RULES.slotLabel(m, sl.role, sl.wp)) + '</div>';
@@ -2474,6 +2524,10 @@ if (typeof module !== 'undefined' && module.exports) {
         });
         $('squadSlots').innerHTML = h;
         renderWpRef();
+        var doneBtn = document.querySelector('#scrSquad [data-act="squad-done"]');
+        if (doneBtn) doneBtn.disabled = waiting;
+        var autoBtn = document.querySelector('#scrSquad [data-act="squad-auto"]');
+        if (autoBtn) autoBtn.disabled = waiting;
         var eq = sq.filter(function(s) { return s.wp; }).length;
         $('squadMsg').textContent = 'チーム' + L + '／装備品 ' + eq + '/8 個を割り当て済み（装備なしでも開始できます）';
         /* select の変更を拾う */
@@ -2499,11 +2553,12 @@ if (typeof module !== 'undefined' && module.exports) {
         var team = squadEditTeam(),
             L = APP.letter[team];
         if (!L) { hint('先にチームを選んでください'); return; }
-        APP.squad[team] = autoSquad(L);
+        APP.squad[team] = autoSquad(L, opponentWps(team));
         renderSquad();
     }
     /* チーム L の編成を自動生成（AI・おまかせ用） */
-    function autoSquad(L) {
+    function autoSquad(L, exclude) {
+        exclude = exclude || {};
         var sq = defaultSquad(L);
         var pool = [];
         WEAPONS.forEach(function(w) { pool.push(w.id); });
@@ -2515,7 +2570,7 @@ if (typeof module !== 'undefined' && module.exports) {
         var used = {};
         sq.forEach(function(sl) {
             var m = memberOf(L, sl.name);
-            var cand = weaponsFor(L, m).filter(function(w) { return !used[w.id]; });
+            var cand = weaponsFor(L, m).filter(function(w) { return !used[w.id] && !exclude[w.id]; });
             if (cand.length) {
                 var pick = cand[Math.floor(Math.random() * cand.length)];
                 sl.wp = pick.id;
@@ -2539,6 +2594,10 @@ if (typeof module !== 'undefined' && module.exports) {
                 w[sq[i].wp] = 1;
             }
         }
+        if (waitingForHostWeapons(team)) return '相手（ホスト）が装備品を選び終わるまでお待ちください';
+        var oppW = opponentWps(team);
+        var clash = squadWps(team).filter(function(id) { return oppW[id]; });
+        if (clash.length) return clash.map(wpName).join('・') + ' は相手が装備しています。別の装備品を選んでください';
         return null;
     }
     function squadDone() {
@@ -2560,7 +2619,20 @@ if (typeof module !== 'undefined' && module.exports) {
                 N.publishMeta(mm);
                 APP.meta = mm;
                 syncLetters(APP.meta);
+                /* 装備品を相手に伝える（相手はこれ以外から選ぶ） */
+                N.publishPlace([], false, APP.letter[team], squadWps(team));
+                APP.myReady = false;
             }
+        }
+        if (APP.mode === 'cpu' && !APP.editingAI) {
+            /* あなたが選ばなかった武器から、AIの装備を決める（自分で決める場合も初期案として） */
+            var mineW = {};
+            squadWps(team).forEach(function(id) { mineW[id] = 1; });
+            var aiL = APP.letter[APP.cpuTeam];
+            var aiSq = APP.squad[APP.cpuTeam] || [];
+            var aiClash = aiSq.some(function(sl) { return sl.wp && mineW[sl.wp]; });
+            var aiEmpty = !aiSq.some(function(sl) { return sl.wp; });
+            if (aiEmpty || aiClash) APP.squad[APP.cpuTeam] = autoSquad(aiL, mineW);
         }
         if (APP.mode === 'cpu' && !APP.editingAI && APP.cpuOpt.aiPick === 'manual') {
             APP.edit[team].list = [];
@@ -2770,6 +2842,8 @@ if (typeof module !== 'undefined' && module.exports) {
             hint('赤: ' + er);
             return;
         }
+        var lc = RULES.weaponConflicts(APP.edit.blue.list, APP.edit.red.list);
+        if (lc.length) { hint(RULES.conflictMsg(lc)); return; }
         APP.g = RULES.newGame(APP.edit.blue.list, APP.edit.red.list, APP.localFirst, { blue: APP.letter.blue, red: APP.letter.red });
         APP.histG = [];
         APP.selected = null;
@@ -2845,7 +2919,7 @@ if (typeof module !== 'undefined' && module.exports) {
         var rest = SQUADS.filter(function (x) { return x !== mine; });
         var cl = rest[Math.floor(Math.random() * rest.length)];
         APP.letter[APP.cpuTeam] = cl;
-        APP.squad[APP.cpuTeam] = autoSquad(cl);
+        APP.squad[APP.cpuTeam] = defaultSquad(cl);   /* 装備はあなたの編成が決まってから */
         APP.editingAI = false;
         hideBanner();
         gotoSquad(t, mine);
@@ -2855,6 +2929,16 @@ if (typeof module !== 'undefined' && module.exports) {
         var ed = APP.edit[APP.myTeam];
         var err = RULES.validatePlacement(ed.list, APP.myTeam, APP.letter[APP.myTeam]);
         if (err) { hint(err); return; }
+        /* あなたが後から編成を変えてAIと重複した場合：おまかせならAIの装備を選び直す */
+        var mineW = {};
+        ed.list.forEach(function(p) { if (p.wp) mineW[p.wp] = 1; });
+        if ((APP.squad[APP.cpuTeam] || []).some(function(sl) { return sl.wp && mineW[sl.wp]; })) {
+            if (APP.cpuOpt.aiPick === 'manual') {
+                hint('AIの装備とあなたの装備が重複しています。編成を見直してください');
+                return;
+            }
+            APP.squad[APP.cpuTeam] = autoSquad(APP.letter[APP.cpuTeam], mineW);
+        }
         var cp = cpuPlace(APP.cpuTeam, APP.letter[APP.cpuTeam], APP.squad[APP.cpuTeam]);
         APP.g = RULES.newGame(APP.myTeam === 'blue' ? ed.list : cp, APP.myTeam === 'blue' ? cp : ed.list, APP.localFirst,
             { blue: APP.letter.blue, red: APP.letter.red });
@@ -2944,9 +3028,11 @@ if (typeof module !== 'undefined' && module.exports) {
         N.on('place', function(e) {
             if (e.team === OTHER[APP.myTeam]) {
                 APP.oppReady = !!(e.data && e.data.ready);
-                tryHostStart();
+                if (APP.screen === 'scrSquad') renderSquad();
                 if (!APP.g) renderAll();
             }
+            /* 自分の送信の折り返しでも開始判定する（どちらが最後に準備完了しても始まるように） */
+            tryHostStart();
         });
         N.on('game', function(g) {
             adoptGame(g);
@@ -2998,6 +3084,11 @@ if (typeof module !== 'undefined' && module.exports) {
         var er = RULES.validatePlacement(pr.list, 'red', lt.red);
         if (er) {
             hint('赤の配置エラー: ' + er);
+            return;
+        }
+        var oc = RULES.weaponConflicts(pb.list, pr.list);
+        if (oc.length) {
+            hint(RULES.conflictMsg(oc));
             return;
         }
         var g = RULES.newGame(pb.list, pr.list, m.firstTeam, { blue: lt.blue, red: lt.red });
@@ -3163,8 +3254,14 @@ if (typeof module !== 'undefined' && module.exports) {
                 hint(err);
                 return;
             }
+            var oppW = opponentWps(APP.myTeam);
+            var clash = ed.list.filter(function(p) { return p.wp && oppW[p.wp]; }).map(function(p) { return p.wp; });
+            if (clash.length) {
+                hint(clash.map(wpName).join('・') + ' は相手が装備しています。「編成」から変更してください');
+                return;
+            }
         }
-        if (!APP.net.publishPlace(ed.list, on, APP.letter[APP.myTeam])) {
+        if (!APP.net.publishPlace(ed.list, on, APP.letter[APP.myTeam], squadWps(APP.myTeam))) {
             hint('送信に失敗しました。通信状態をご確認ください');
             return;
         }
@@ -3427,7 +3524,8 @@ if (typeof module !== 'undefined' && module.exports) {
         if (w.target) tags.push({ enemy: '相手を選ぶ', allyF: '味方の女子を選ぶ', room: '部屋を選ぶ', square: '行き先を選ぶ' }[w.target]);
         return '<div class="item"><div>' + rarBadge(w.rarity) + '<span class="nm">' + esc(w.name) + '</span></div>' +
             '<div class="tags">' + tags.map(function(t) { return '<span class="kd">' + esc(t) + '</span>'; }).join('') + '</div>' +
-            '<div class="ds">' + esc(w.desc) + '</div>' + (note || '') + '</div>';
+            '<div class="ds">' + esc(w.desc) + '</div>' +
+            (w.only ? '<div class="ow">※ ' + esc(w.only) + ' 専用</div>' : '') + (note || '') + '</div>';
     }
     /* ---------- 装備図鑑 ---------- */
     function renderWeaponsBook() {

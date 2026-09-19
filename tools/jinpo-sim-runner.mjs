@@ -170,7 +170,8 @@ function weaponWeight(id, tactic) {
   return ((table[tactic] && table[tactic][id]) || 1);
 }
 
-function buildSquad(core, letter, tactic, profile, rand) {
+/* taken: 相手がすでに選んだ武器（武器は両軍を通して1個ずつ） */
+function buildSquad(core, letter, tactic, profile, rand, taken) {
   const { fixedOf, freeRoster, memberOf, weaponsFor } = core;
   const free = shuffle(freeRoster(letter).slice(), rand).slice(0, 6);
   const slots = free.map(m => ({ role: 'soldier', name: m.name, wp: null }));
@@ -178,7 +179,7 @@ function buildSquad(core, letter, tactic, profile, rand) {
   slots.push({ role: 'flag', name: fixedOf(letter, 'flag').name, wp: null });
   if (profile === 'none') return slots;
 
-  const used = new Set();
+  const used = new Set(taken || []);
   const order = shuffle(slots.map((_, i) => i), rand);
   for (const i of order) {
     if (profile === 'sparse' && rand() < 0.45) continue;
@@ -301,8 +302,16 @@ function playGame(engine, opts, config, gameIndex, rand) {
   const { RULES } = core;
   const blueProfile = weaponProfile(gameIndex, 'blue', config.blueTactic);
   const redProfile = weaponProfile(gameIndex, 'red', config.redTactic);
-  const blueSquad = buildSquad(core, config.blueTeam, config.blueTactic, blueProfile, rand);
-  const redSquad = buildSquad(core, config.redTeam, config.redTactic, redProfile, rand);
+  /* 実際の対戦と同じく、先に選ぶ側（ここでは交互）が選んだ武器は後の側が使えない */
+  const blueFirst = (gameIndex % 2) === 0;
+  let blueSquad, redSquad;
+  if (blueFirst) {
+    blueSquad = buildSquad(core, config.blueTeam, config.blueTactic, blueProfile, rand);
+    redSquad = buildSquad(core, config.redTeam, config.redTactic, redProfile, rand, blueSquad.map(s => s.wp).filter(Boolean));
+  } else {
+    redSquad = buildSquad(core, config.redTeam, config.redTactic, redProfile, rand);
+    blueSquad = buildSquad(core, config.blueTeam, config.blueTactic, blueProfile, rand, redSquad.map(s => s.wp).filter(Boolean));
+  }
   const bluePlace = buildPlacement(core, 'blue', config.blueTeam, blueSquad, config.blueTactic, rand);
   const redPlace = buildPlacement(core, 'red', config.redTeam, redSquad, config.redTactic, rand);
   const g = RULES.newGame(bluePlace, redPlace, config.first, { blue: config.blueTeam, red: config.redTeam });
