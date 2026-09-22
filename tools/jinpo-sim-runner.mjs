@@ -100,8 +100,10 @@ function loadEngine(rand) {
 window.__JINPO_CORE__ = {
   SQ, ADJ, BROKEN_WALL_LINKS, ROSTER, SQUADS, WEAPONS, WP, effWp,
   rosterOf, memberOf, fixedOf, freeRoster, weaponsFor,
-  RULES, OTHER, JPN, floorOfPos, corrIndex, forwardSign, adjacentSquares, kusanagiWallsBroken
-};`;
+  RULES, OTHER, JPN, floorOfPos, corrIndex, forwardSign, adjacentSquares, kusanagiWallsBroken,
+  applyWeaponTable, activeWeapons
+};
+window.applyWeaponTable = applyWeaponTable;`;
 
   const context = {
     console,
@@ -114,6 +116,11 @@ window.__JINPO_CORE__ = {
   context.window = context;
   vm.createContext(context);
   vm.runInContext(`${core}\n${expose}\n${smart}`, context, { filename: 'jinpo-engine.vm.js' });
+  /* 武器表（weapons.csv）があれば、ゲームと同じようにオンオフを反映する */
+  const csvPath = path.join(ROOT, 'weapons.csv');
+  if (fs.existsSync(csvPath) && typeof context.applyWeaponTable === 'function') {
+    context.applyWeaponTable(fs.readFileSync(csvPath, 'utf8'));
+  }
   instrumentRules(context.__JINPO_CORE__.RULES);
   return context;
 }

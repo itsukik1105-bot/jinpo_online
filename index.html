@@ -566,34 +566,34 @@ link('C30', 'D2');
    入口の段（A3/A4・C3/C4・B27/B28・D27/D28）と同じ高さに横一列で隣接。
    P5/P6, Q5/Q6 は踊り場＝本殿（少し大きいマス） */
 [220, 260, 300, 340].forEach(function(x, i) {
-    addSq('P' + (i + 1), x, 140, {
+    addSq('P' + (i + 1), x, 180, {
         kind: 'stair',
         team: 'blue',
         seg: 'Pn'
     });
 });
-addSq('P5', 380, 128, {
+addSq('P5', 380, 168, {
     kind: 'honden',
     team: 'blue',
     seg: 'Pn'
 }, 60, 60);
-addSq('P6', 440, 128, {
+addSq('P6', 440, 168, {
     kind: 'honden',
     team: 'blue',
     seg: 'Pf'
 }, 60, 60);
 [500, 540, 580, 620].forEach(function(x, i) {
-    addSq('P' + (i + 7), x, 140, {
+    addSq('P' + (i + 7), x, 180, {
         kind: 'stair',
         team: 'blue',
         seg: 'Pf'
     });
 });
 for (let i = 1; i < 10; i++) link('P' + i, 'P' + (i + 1));
-link('A3', 'P1');
-link('A4', 'P1');
-link('P10', 'C3');
-link('P10', 'C4');
+link('A5', 'P1');
+link('A6', 'P1');
+link('P10', 'C5');
+link('P10', 'C6');
 [220, 260, 300, 340].forEach(function(x, i) {
     addSq('Q' + (i + 1), x, 1228, {
         kind: 'stair',
@@ -623,25 +623,13 @@ link('B27', 'Q1');
 link('B28', 'Q1');
 link('Q10', 'D27');
 link('Q10', 'D28');
-/* 潜伏所 T1〜T16（扉マスの隣に配置） */
-const TDEF = [
-    ['T1', 'A6', 'R'],
-    ['T2', 'A12', 'R'],
-    ['T3', 'A18', 'R'],
-    ['T4', 'A24', 'R'],
-    ['T5', 'A30', 'R'],
-    ['T6', 'C27', 'L'],
-    ['T7', 'D7', 'L'],
-    ['T8', 'D23', 'L'],
-    ['T9', 'C6', 'R'],
-    ['T10', 'C12', 'R'],
-    ['T11', 'C18', 'R'],
-    ['T12', 'C24', 'R'],
-    ['T13', 'C30', 'R'],
-    ['T14', 'D6', 'R'],
-    ['T15', 'D14', 'R'],
-    ['T16', 'D26', 'R']
-];
+/* 潜伏所（扉マスの隣に配置）
+   扉が奇数＝廊下の左列なので部屋は左へ、偶数＝右列なので部屋は右へ置く */
+const TDOORS = ['A4', 'A7', 'A18', 'A30', 'B3', 'B12', 'B25',
+                'C8', 'C18', 'C21', 'C28', 'D1', 'D6', 'D21', 'D28'];
+const TDEF = TDOORS.map(function(door, i) {
+    return ['T' + (i + 1), door, (parseInt(door.slice(1), 10) % 2 === 1) ? 'L' : 'R'];
+});
 TDEF.forEach(function(t) {
     const q = SQ[t[1]];
     const x = (t[2] === 'R') ? q.x + CELL + 16 : q.x - CELL - 16;
@@ -653,72 +641,19 @@ TDEF.forEach(function(t) {
     });
     link(t[0], t[1]);
 });
-/* 大部屋 X / Y（6×6・相互不通・奥は行き止まり） */
-['X', 'Y'].forEach(function(R) {
-    const y0 = (R === 'X') ? 708 : 948;
-    for (let r = 0; r < 6; r++)
-        for (let c = 0; c < 6; c++)
-            addSq(R + (r * 6 + c + 1), 250 + c * CELL, y0 + r * CELL, {
-                kind: 'room',
-                team: 'red',
-                room: R,
-                floor: 1
-            });
-    for (let r = 0; r < 6; r++)
-        for (let c = 0; c < 6; c++) {
-            const n = r * 6 + c + 1;
-            if (c < 5) link(R + n, R + (n + 1));
-            if (r < 5) link(R + n, R + (n + 6));
-        }
-});
-/* ふすま（B廊下の偶数列 ⇔ 部屋の扉列） */
-const FUSUMA = [
-    ['B2', 'X1'],
-    ['B4', 'X7'],
-    ['B6', 'X13'],
-    ['B8', 'X19'],
-    ['B10', 'X25'],
-    ['B12', 'X31'],
-    ['B14', 'Y1'],
-    ['B16', 'Y7'],
-    ['B18', 'Y13'],
-    ['B20', 'Y19'],
-    ['B22', 'Y25'],
-    ['B24', 'Y31']
-];
-FUSUMA.forEach(function(p) {
-    link(p[0], p[1]);
-});
-const BROKEN_WALL_LINKS = [
-    ['X31', 'Y1'],
-    ['X32', 'Y2'],
-    ['X33', 'Y3'],
-    ['X34', 'Y4'],
-    ['X35', 'Y5'],
-    ['X36', 'Y6']
-];
+/* 大部屋X/Yとふすま・破れる壁は廃止（互換のため空で残す） */
+const FUSUMA = [];
+const BROKEN_WALL_LINKS = [];
 const BROKEN_WALL_EXTRA = {};
-BROKEN_WALL_LINKS.forEach(function(p) {
-    (BROKEN_WALL_EXTRA[p[0]] || (BROKEN_WALL_EXTRA[p[0]] = [])).push(p[1]);
-    (BROKEN_WALL_EXTRA[p[1]] || (BROKEN_WALL_EXTRA[p[1]] = [])).push(p[0]);
-});
-function kusanagiWallsBroken(g) {
-    return !!(g && (g.kusanagiOpen || (g.soldiers && g.soldiers.some(function(s) { return s.wp === 'kusanagi'; }))));
-}
+function kusanagiWallsBroken(g) { return false; }
 function adjacentSquares(g, id) {
-    const base = ADJ[id] ? ADJ[id].slice() : [];
-    if (kusanagiWallsBroken(g) && BROKEN_WALL_EXTRA[id]) {
-        BROKEN_WALL_EXTRA[id].forEach(function(nb) {
-            if (base.indexOf(nb) < 0) base.push(nb);
-        });
-    }
-    return base;
+    return ADJ[id] ? ADJ[id].slice() : [];
 }
 const STAIR_LINKS = [
-    ['A3', 'P1'],
-    ['A4', 'P1'],
-    ['P10', 'C3'],
-    ['P10', 'C4'],
+    ['A5', 'P1'],
+    ['A6', 'P1'],
+    ['P10', 'C5'],
+    ['P10', 'C6'],
     ['B27', 'Q1'],
     ['B28', 'Q1'],
     ['Q10', 'D27'],
@@ -838,10 +773,69 @@ const WEAPONS = [
     { id: 'ogoru',     rarity: 'R',   name: '金澤の「ここは俺が奢るわ」',       kind: 'active',   once: true,
       desc: '自分チームの80期の行動マスを、このターンだけ+1する。1ゲームに1回のみ。' },
     { id: 'shinasadame', rarity: 'R', name: '品定め',                       kind: 'active',   once: true, target: 'room',
-      desc: '好きな部屋（潜伏所T1〜T16・大部屋X・Y）を1つ選び、そこに誰がいるかを確認できる。1ゲームに1回のみ。' }
+      desc: '好きな潜伏所を1つ選び、そこに誰がいるかを確認できる。1ゲームに1回のみ。' }
 ];
 const WP = {};
-WEAPONS.forEach(function(w) { WP[w.id] = w; });
+WEAPONS.forEach(function(w) { WP[w.id] = w; w.enabled = true; });
+
+/* ===== 武器表（weapons.csv）=====
+   ゲームと同じ場所に置いた weapons.csv を起動時に読み、
+   「使う」列が FALSE の武器を図鑑と編成画面から外す。名前と説明も表の内容で上書きする。
+   読み込めなかった場合は、この中の定義がそのまま使われる（全部有効）。 */
+function parseCsv(text) {
+    const rows = [];
+    let row = [], cur = '', q = false;
+    text = String(text).replace(/\r\n?/g, '\n');
+    for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (q) {
+            if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; }
+            else cur += c;
+        } else if (c === '"') q = true;
+        else if (c === ',') { row.push(cur); cur = ''; }
+        else if (c === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; }
+        else cur += c;
+    }
+    if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+    return rows.filter(function(r) { return r.some(function(v) { return String(v).trim() !== ''; }); });
+}
+function isChecked(v) {
+    const t = String(v == null ? '' : v).trim().toUpperCase();
+    return !(t === 'FALSE' || t === '0' || t === 'NO' || t === '✗' || t === '×' || t === '' || t === 'OFF' || t === 'いいえ');
+}
+function applyWeaponTable(text) {
+    const rows = parseCsv(text);
+    if (rows.length < 2) return 0;
+    const head = rows[0].map(function(h) { return String(h).trim(); });
+    const col = function(names) {
+        for (let i = 0; i < head.length; i++) if (names.indexOf(head[i]) >= 0) return i;
+        return -1;
+    };
+    const ci = col(['id', 'ID']),
+        ce = col(['使う', 'enabled', '有効', '実装', 'ON']),
+        cn = col(['名前', 'name']),
+        cd = col(['説明', 'desc', '効果']);
+    if (ci < 0) return 0;
+    let n = 0;
+    rows.slice(1).forEach(function(r) {
+        const w = WP[String(r[ci]).trim()];
+        if (!w) return;
+        if (ce >= 0) w.enabled = isChecked(r[ce]);
+        if (cn >= 0 && String(r[cn]).trim()) w.name = String(r[cn]).trim();
+        if (cd >= 0 && String(r[cd]).trim()) w.desc = String(r[cd]).trim();
+        n++;
+    });
+    return n;
+}
+/* 表で「使う」にした武器だけ */
+function activeWeapons() { return WEAPONS.filter(function(w) { return w.enabled; }); }
+function loadWeaponTable(url) {
+    if (typeof fetch !== 'function') return Promise.resolve(0);
+    return fetch(url || 'weapons.csv', { cache: 'no-cache' })
+        .then(function(r) { return r.ok ? r.text() : null; })
+        .then(function(t) { return t ? applyWeaponTable(t) : 0; })
+        .catch(function() { return 0; });
+}
 /* 【ファンネル石井】の抽選に混ぜるハズレの枚数 */
 const FUNNEL_BLANKS = 3;
 
@@ -881,7 +875,7 @@ function wpLabelOf(s) {
 /* 人物 m が装備できる武器：専用武器は本人だけ。それ以外は誰でも */
 function weaponsFor(L, m) {
     if (!m) return [];
-    return WEAPONS.filter(function(w) { return !w.only || w.only === m.name; });
+    return activeWeapons().filter(function(w) { return !w.only || w.only === m.name; });
 }
 
 /* ===== 通り（フロア）判定 ===== */
@@ -990,6 +984,7 @@ const RULES = (function() {
             if (p.role === 'soldier' && m.fixed) return m.name + ' は' + (m.fixed === 'mega' ? '📣メガホン' : '🚩旗持ち') + '専任です';
             if (p.wp) {
                 if (!WP[p.wp]) return '不正な装備品';
+                if (!WP[p.wp].enabled) return wpName(p.wp) + ' は現在使えない設定です（武器表）';
                 if (seenWp[p.wp]) return wpName(p.wp) + ' を2人が装備しています（武器は1個ずつ）';
                 seenWp[p.wp] = true;
                 if (WP[p.wp].only && WP[p.wp].only !== p.name) return wpName(p.wp) + ' は' + WP[p.wp].only + 'の専用武器です';
@@ -1235,8 +1230,7 @@ const RULES = (function() {
     function splashAttack(g, s) {
         if (!hasWp(s, 'chinbo')) return;
         adjacentSquares(g, s.pos).forEach(function(nb) {
-            const k = SQ[nb].kind;
-            if (k === 'T' || k === 'room') return;
+            if (SQ[nb].kind === 'T') return;   /* 囲われた潜伏所の中には届かない */
             const v = enemyAt(g, nb, s.team);
             if (v && v.sex === 'F') killPiece(g, v, '⚔ 吉岡の珍棒の間合い！ ' + plbl(v) + ' が ' + nb + ' で撃破された', { killer: s });
         });
@@ -1301,8 +1295,8 @@ const RULES = (function() {
         if (iinchoBlocked(g, s, to)) return { ok: false, err: '委員長の威厳に気圧されて近づけません' };
         const qFrom = SQ[s.pos];
         const qTo0 = SQ[to];
-        const leavingRoom = (qFrom.kind === 'T' && qTo0.kind !== 'T') || (!!qFrom.room && qFrom.room !== qTo0.room);
-        if (leavingRoom && s.steps < 2) return { ok: false, err: '部屋・潜伏所から出るには2歩ぶんの移動力が必要です' };
+        const leavingRoom = (qFrom.kind === 'T' && qTo0.kind !== 'T');
+        if (leavingRoom && s.steps < 2) return { ok: false, err: '潜伏所から出るには2歩ぶんの移動力が必要です' };
         const v = enemyAt(g, to, s.team);
         let captured = null;
         if (v && killPiece(g, v, '⚔ ' + plbl(v) + ' が ' + to + ' で撃破された', { killer: s })) captured = v.sid;
@@ -1510,13 +1504,10 @@ const RULES = (function() {
         }
         if (w.id === 'shinasadame') {
             const room = String(target || '');
-            const isT = SQ[room] && SQ[room].kind === 'T';
-            if (!isT && room !== 'X' && room !== 'Y') return { ok: false, err: '確認する部屋（潜伏所か大部屋X・Y）を選んでください' };
+            if (!SQ[room] || SQ[room].kind !== 'T') return { ok: false, err: '確認する潜伏所を選んでください' };
             markWeaponUsed(s, 'shinasadame');
-            const who = g.soldiers.filter(function(o) {
-                return o.alive && (isT ? o.pos === room : SQ[o.pos].room === room);
-            });
-            const label = isT ? '潜伏所' + room : '大部屋' + room;
+            const who = g.soldiers.filter(function(o) { return o.alive && o.pos === room; });
+            const label = '潜伏所' + room;
             const res = who.length ? who.map(function(o) { return plbl(o); }).join('・') : '誰もいない';
             setPop(g, 'shinasadame', s, label + '：' + res);
             g.log.push('🔍 品定め：' + plbl(s) + ' が' + label + 'を確認 → ' + res);
@@ -1597,7 +1588,6 @@ const RULES = (function() {
     /* 視認できるマス集合 */
     function visibleSquares(g, team) {
         const vis = new Set();
-        const wallsBroken = kusanagiWallsBroken(g);
         /* ▼ 廊下の視界: 自分の駒が立っている廊下だけ見える（自陣でも無人なら見えない）。
            A-B / C-D はひと続きの廊下だが、間の壁に暗幕が垂れている。
            暗幕が破れた後（g.crossed）または草薙剣が存在する間は、反対側の廊下まで見通せる */
@@ -1613,17 +1603,17 @@ const RULES = (function() {
             if (q.kind !== 'corridor') continue;
             const c = q.corridor;
             if (myCorr[c]) vis.add(q.id);
-            else if ((wallsBroken || g.crossed[CORR_FLOOR[c]]) && myCorr[CORR_PARTNER[c]]) vis.add(q.id);
+            else if (g.crossed[CORR_FLOOR[c]] && myCorr[CORR_PARTNER[c]]) vis.add(q.id);
         }
         const mine = g.soldiers.filter(s => s.alive && s.team === team);
         const at = id => mine.some(s => s.pos === id);
         const SEGS = [{
                 list: ['P1', 'P2', 'P3', 'P4', 'P5'],
-                doors: ['A3', 'A4']
+                doors: ['A5', 'A6']
             },
             {
                 list: ['P6', 'P7', 'P8', 'P9', 'P10'],
-                doors: ['C3', 'C4']
+                doors: ['C5', 'C6']
             },
             {
                 list: ['Q1', 'Q2', 'Q3', 'Q4', 'Q5'],
@@ -1644,21 +1634,6 @@ const RULES = (function() {
         if (at('P6')) vis.add('P5');
         if (at('Q5')) vis.add('Q6');
         if (at('Q6')) vis.add('Q5');
-        ['X', 'Y'].forEach(R => {
-            if (mine.some(s => SQ[s.pos].room === R)) {
-                for (const q of Object.values(SQ))
-                    if (q.room === R) vis.add(q.id);
-                if (wallsBroken) {
-                    const otherRoom = R === 'X' ? 'Y' : 'X';
-                    for (const q of Object.values(SQ))
-                        if (q.room === otherRoom) vis.add(q.id);
-                }
-            }
-        });
-        if (wallsBroken) {
-            for (const q of Object.values(SQ))
-                if (q.kind === 'T') vis.add(q.id);
-        }
         mine.forEach(s => vis.add(s.pos));
         /* 旧セーブ互換: 以前の草薙剣で扉を破壊した潜伏所 */
         ((g.revealT && g.revealT[team]) || []).forEach(function(id) { vis.add(id); });
@@ -2874,14 +2849,9 @@ if (typeof module !== 'undefined' && module.exports) {
             list.push({ role: role, pos: pos, name: sl.name, wp: sl.wp });
             return true;
         }
-        var flagCands;
-        if (team === 'red') {
-            flagCands = Object.values(SQ).filter(function (q) { return q.room && ((parseInt(q.id.slice(1), 10) - 1) % 6) >= 4; }).map(function (q) { return q.id; });
-        } else {
-            flagCands = Object.values(SQ).filter(function (q) { return q.kind === 'T' && q.team === team; }).map(function (q) { return q.id; });
-        }
+        var flagCands = Object.values(SQ).filter(function (q) { return q.kind === 'T' && q.team === team; }).map(function (q) { return q.id; });
         take('flag', pickOne(flagCands));
-        var doors = shuffleArr((team === 'blue') ? ['A3', 'A4', 'C3', 'C4'] : ['B27', 'B28', 'D27', 'D28']);
+        var doors = shuffleArr((team === 'blue') ? ['A5', 'A6', 'C5', 'C6'] : ['B27', 'B28', 'D27', 'D28']);
         take('soldier', doors[0]);
         take('soldier', doors[1]);
         var corr = shuffleArr(Object.values(SQ).filter(function (q) { return q.kind === 'corridor' && q.team === team && !used[q.id]; }).map(function (q) { return q.id; }));
@@ -3521,7 +3491,7 @@ if (typeof module !== 'undefined' && module.exports) {
         var tags = [KIND_JP[w.kind]];
         if (lim) tags.push(lim + '回のみ');
         if (w.declare) tags.push('要宣言');
-        if (w.target) tags.push({ enemy: '相手を選ぶ', allyF: '味方の女子を選ぶ', room: '部屋を選ぶ', square: '行き先を選ぶ' }[w.target]);
+        if (w.target) tags.push({ enemy: '相手を選ぶ', allyF: '味方の女子を選ぶ', room: '潜伏所を選ぶ', square: '行き先を選ぶ' }[w.target]);
         return '<div class="item"><div>' + rarBadge(w.rarity) + '<span class="nm">' + esc(w.name) + '</span></div>' +
             '<div class="tags">' + tags.map(function(t) { return '<span class="kd">' + esc(t) + '</span>'; }).join('') + '</div>' +
             '<div class="ds">' + esc(w.desc) + '</div>' +
@@ -3530,16 +3500,17 @@ if (typeof module !== 'undefined' && module.exports) {
     /* ---------- 装備図鑑 ---------- */
     function renderWeaponsBook() {
         var f = APP.bookFilter || 'all';
+        var live = activeWeapons();
         var chips = [['all', 'すべて']].concat(['UR', 'SSR', 'SR', 'R'].map(function(r) { return [r, r]; }));
         $('bookFilter').innerHTML = chips.map(function(c) {
-            var n = c[0] === 'all' ? WEAPONS.length : WEAPONS.filter(function(w) { return w.rarity === c[0]; }).length;
+            var n = c[0] === 'all' ? live.length : live.filter(function(w) { return w.rarity === c[0]; }).length;
             return '<button data-act="book-' + c[0] + '" class="' + (f === c[0] ? 'on' : '') + '">' +
                 (c[0] === 'all' ? '' : rarBadge(c[0])) + (c[0] === 'all' ? c[1] : '') + '<span class="n">' + n + '</span></button>';
         }).join('');
         var h = '';
         ['UR', 'SSR', 'SR', 'R'].forEach(function(r) {
             if (f !== 'all' && f !== r) return;
-            var list = WEAPONS.filter(function(w) { return w.rarity === r; });
+            var list = live.filter(function(w) { return w.rarity === r; });
             h += '<div class="wpRef"><h4>' + rarBadge(r) + { UR: 'ウルトラレア', SSR: 'ダブルスーパーレア', SR: 'スーパーレア', R: 'レア' }[r] + '（' + list.length + '種）</h4>';
             list.forEach(function(w) { h += weaponItemHtml(w); });
             h += '</div>';
@@ -3556,9 +3527,10 @@ if (typeof module !== 'undefined' && module.exports) {
         var sq = APP.squad[team] || [];
         var owner = {};
         sq.forEach(function(sl) { if (sl.wp) owner[sl.wp] = sl.name; });
-        var h = '<div class="wpRef"><h4>装備品 全' + WEAPONS.length + '種（誰でも装備可能）</h4>';
+        var live = activeWeapons();
+        var h = '<div class="wpRef"><h4>装備品 全' + live.length + '種</h4>';
         ['UR', 'SSR', 'SR', 'R'].forEach(function(r) {
-            var list = WEAPONS.filter(function(w) { return w.rarity === r; });
+            var list = live.filter(function(w) { return w.rarity === r; });
             if (!list.length) return;
             h += '<h5>' + rarBadge(r) + list.length + '種</h5>';
             list.forEach(function(w) {
@@ -3709,7 +3681,7 @@ if (typeof module !== 'undefined' && module.exports) {
             startAim(s.sid, 'allyF', 'ワープさせる味方の女子をタップしてください（下の駒バーからも選べます）');
             return;
         }
-        if (w.id === 'shinasadame') { startAim(s.sid, 'room', '確認したい部屋（潜伏所か大部屋X・Y）をタップしてください'); return; }
+        if (w.id === 'shinasadame') { startAim(s.sid, 'room', '確認したい潜伏所をタップしてください'); return; }
         if (CONFIRM_WP[w.id] && typeof window !== 'undefined' && window.confirm &&
             !window.confirm(w.name + ' を発動します。\n\n' + w.desc + '\n\nよろしいですか？')) return;
         applyWeapon(s.sid, null);
@@ -3758,8 +3730,7 @@ if (typeof module !== 'undefined' && module.exports) {
             if (sq && RULES.shuchiDests(g, user).indexOf(sq) >= 0) { applyWeapon(user.sid, APP.targetVictim, sq); return true; }
         } else if (kind === 'room') {
             var q = sq ? SQ[sq] : null;
-            var room = q ? (q.kind === 'T' ? q.id : (q.room || null)) : null;
-            if (room) { applyWeapon(user.sid, room); return true; }
+            if (q && q.kind === 'T') { applyWeapon(user.sid, q.id); return true; }
         }
         clearAim();
         hint('対象の指定を取り消しました');
@@ -4165,28 +4136,23 @@ if (typeof module !== 'undefined' && module.exports) {
             1: false,
             2: false
         };
-        var wallsBroken = g && RULES.kusanagiWallsBroken(g);
         [
             [136, 1],
             [656, 2]
         ].forEach(function(wm) {
             var x = wm[0],
                 fl = wm[1],
-                cr = wallsBroken || crossed[fl];
+                cr = crossed[fl];
             out += '<rect x="' + x + '" y="697" width="90" height="10" rx="3" fill="' + COL.wall + '" opacity="' + (cr ? 0.28 : 1) + '"/>';
-            out += '<text x="' + (x - 6) + '" y="706" text-anchor="end" font-size="10" fill="' + (cr ? COL.wall : '#8a929c') + '">' + (cr ? (wallsBroken ? '草薙破壊' : '暗幕破れ') : '暗幕') + '</text>';
+            out += '<text x="' + (x - 6) + '" y="706" text-anchor="end" font-size="10" fill="' + (cr ? COL.wall : '#8a929c') + '">' + (cr ? '暗幕破れ' : '暗幕') + '</text>';
         });
-        out += '<rect x="248" y="944" width="244" height="8" fill="' + COL.greenWall + '" opacity="' + (wallsBroken ? '0.24' : '1') + '"/>';
         /* キャプション */
         out += cap(140, 94, 'A廊下（1階・青）');
         out += cap(660, 94, 'C廊下（2階・青）');
         out += cap(140, 1322, 'B廊下（1階・赤）');
         out += cap(660, 1322, 'D廊下（2階・赤）');
-        out += cap(226, 116, '青の階段：A3・A4 ⇄ P1…P4 ⇄ 本殿(P5・P6) ⇄ P7…P10 ⇄ C3・C4', '#8fa8c8');
+        out += cap(226, 156, '青の階段：A5・A6 ⇄ P1…P4 ⇄ 本殿(P5・P6) ⇄ P7…P10 ⇄ C5・C6', '#8fa8c8');
         out += cap(226, 1300, '赤の階段：B27・B28 ⇄ Q1…Q4 ⇄ 本殿(Q5・Q6) ⇄ Q7…Q10 ⇄ D27・D28', '#c89a94');
-        out += '<text x="498" y="830" font-size="11" fill="#9aa3ad">← X部屋（6×6）</text>';
-        out += '<text x="498" y="1072" font-size="11" fill="#9aa3ad">← Y部屋（6×6）</text>';
-        out += '<text x="498" y="954" font-size="10" fill="#7fc27a">' + (wallsBroken ? 'X/Y間の壁は草薙剣で破壊' : 'X/Y間は壁（不通）') + '</text>';
         /* 配置中：自陣以外を薄暗く */
         if (!g && APP.mode) {
             var pt = placingTeam();
@@ -4258,7 +4224,6 @@ if (typeof module !== 'undefined' && module.exports) {
                 } else if (APP.aimKind === 'room') {
                     Object.values(SQ).forEach(function(q) {
                         if (q.kind === 'T') out += '<circle cx="' + (q.x + 20) + '" cy="' + (q.y + 20) + '" r="19" fill="none" stroke="' + AC + '" stroke-width="3" pointer-events="none"/>';
-                        else if (q.room) out += '<rect x="' + (q.x + 2) + '" y="' + (q.y + 2) + '" width="' + (q.w - 4) + '" height="' + (q.h - 4) + '" fill="' + AF + '" pointer-events="none"/>';
                     });
                 }
                 out += '<g pointer-events="none"><rect x="' + (ac[0] - 27) + '" y="' + (ac[1] - 40) + '" width="54" height="18" rx="9" fill="' + AC + '"/><text x="' + ac[0] + '" y="' + (ac[1] - 27) + '" text-anchor="middle" font-size="11" font-weight="700" fill="#1a1426">対象選択</text></g>';
@@ -4429,7 +4394,7 @@ if (typeof module !== 'undefined' && module.exports) {
         } else if (g.phase === 'play') {
             var mine = canAct();
             var sel = APP.selected ? RULES.getS(g, APP.selected) : null;
-            var AIM_TXT = { enemy: '対象の相手をタップ', allyF: 'ワープさせる女子をタップ', dest: 'ワープ先をタップ', room: '確認する部屋をタップ' };
+            var AIM_TXT = { enemy: '対象の相手をタップ', allyF: 'ワープさせる女子をタップ', dest: 'ワープ先をタップ', room: '確認する潜伏所をタップ' };
             if (APP.maebaAim) {
                 h += '<span class="tag" id="targetNote">前歯の行き先を選択</span>' + btn('cancel-target', '取消', 'warn');
             } else if (APP.target && APP.aimKind) {
@@ -4921,6 +4886,12 @@ if (typeof module !== 'undefined' && module.exports) {
             updateTimerView();
             renderNetBadge();
         }, 1000);
+        /* 武器表を読み込み、反映されたら開いている画面を描き直す */
+        loadWeaponTable().then(function(n) {
+            if (!n) return;
+            if (APP.screen === 'scrWeapons') renderWeaponsBook();
+            if (APP.screen === 'scrSquad') renderSquad();
+        });
         document.title = BASE_TITLE;
         showScreen('scrHome');
         renderHome();
@@ -4968,7 +4939,7 @@ function distFromGoals(goals) {
 }
 const ENEMY_HONDEN = { blue: ['Q5', 'Q6'], red: ['P5', 'P6'] };
 const MY_HONDEN = { blue: ['P5', 'P6'], red: ['Q5', 'Q6'] };
-const STAIR_DOORS = { blue: ['A3', 'A4', 'C3', 'C4'], red: ['B27', 'B28', 'D27', 'D28'] };
+const STAIR_DOORS = { blue: ['A5', 'A6', 'C5', 'C6'], red: ['B27', 'B28', 'D27', 'D28'] };
 const DIST = { blue: distFromGoals(ENEMY_HONDEN.blue), red: distFromGoals(ENEMY_HONDEN.red) }; // dist to enemy honden
 const _bfs = {};
 function bfsFrom(a) { return _bfs[a] || (_bfs[a] = distFromGoals([a])); }
@@ -4994,13 +4965,13 @@ function reach(g, s) {
       for (const nb of RULES.adjacentSquares(g, cur)) {
         const qn = SQ[nb];
         /* 新ルール: 部屋・潜伏所からの退出は2歩ぶん消費、入室ターンの退出は不可 */
-        const leaving = (qc.kind === 'T' && qn.kind !== 'T') || (!!qc.room && qc.room !== qn.room);
+        const leaving = (qc.kind === 'T' && qn.kind !== 'T');
         const cost = leaving ? 2 : 1;
         if (info.dist + cost > s.steps) continue;
         const o = board[nb];
         if (o && o.team === mine && o.sid !== s.sid) continue; // ally blocks
         const caps = info.caps + (o && o.team !== mine ? 1 : 0);
-        const entered = (!!qn.room && qc.room !== qn.room) ? qn.room : info.entered;
+        const entered = info.entered;
         const nd = info.dist + cost;
         const prev = res[nb];
         if (!prev || nd < prev.dist || (nd === prev.dist && caps > prev.caps)) {
@@ -5072,7 +5043,7 @@ function pieceScore(g, s, tag, id, info, params, threat) {
     if (SQ[id].team !== mine) sc -= 1500;
     if (exposed) sc -= 5000;
     if (SQ[id].kind === 'T') sc += 140;               // hide in 潜伏所
-    if (SQ[id].room) sc += 80;                         // hide in X/Y room (red)
+
     const ne = nearestEnemyDist(g, id, mine);
     sc += Math.min(ne, 12) * 14;
     if (id === s.pos) sc += 10;
@@ -5150,7 +5121,7 @@ function evalState(g, team) {
   if (mf) {
     sc += 9 * Math.min(nearestEnemyDist(g, mf.pos, team), 12);
     if (SQ[mf.pos].kind === 'T') sc += 70;
-    if (SQ[mf.pos].room) sc += 45;
+
     if (SQ[mf.pos].team !== team) sc -= 400;
   }
   // vision on my stair doors
