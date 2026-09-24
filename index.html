@@ -750,12 +750,12 @@ const WEAPONS = [
       desc: 'この駒が取られた時、取った相手の駒も道連れにする。' },
     { id: 'shuchi',    rarity: 'SR',  name: '酒池クニ林',                   kind: 'active',   once: true, target: 'allyF',
       desc: '味方の女子1人を、自分の縦横1マス隣にワープさせる。1ゲームに1回のみ。' },
-    { id: 'funnel',    rarity: 'R',   name: 'ファンネル石井',               kind: 'active',   once: true, only: '石井',
-      desc: '自らを生贄に捧げ、相手の駒1人を無作為に撃破する。抽選には3枚のハズレが含まれ、ハズレでも自分は消滅する。1ゲームに1回のみ。' },
-    { id: 'zutai',     rarity: 'R',   name: '図体のでかい関原',             kind: 'passive', only: '関原',
-      desc: 'この駒の行動マスが+2される。ただしこの駒が倒されると、味方の行動マスはゲーム終了まで-1される。' },
-    { id: 'hardgel',   rarity: 'R',   name: '小野寺のハードジェル',         kind: 'active',   once: true, target: 'enemy', only: '小野寺',
-      desc: '選んだ相手の駒を1ターン行動不能にする。1ゲームに1回のみ。' },
+    { id: 'funnel',    rarity: 'SR',  name: 'ファンネル石井',               kind: 'active',   once: true, only: '石井',
+      desc: '自らを生贄に捧げ、相手の駒1人を無作為に撃破する。1ゲームに1回のみ。' },
+    { id: 'zutai',     rarity: 'SR',  name: '図体のでかい関原',             kind: 'passive', only: '関原',
+      desc: 'この駒が場にいる限り、味方全員の行動マスが+1される。ただしこの駒が倒されると、味方の行動マスはゲーム終了まで-2される。' },
+    { id: 'hardgel',   rarity: 'SR',  name: '小野寺のハードジェル',         kind: 'active',   once: true, only: '小野寺',
+      desc: '相手チームの【男】を全員、1ターン行動不能にする。1ゲームに1回のみ。' },
     { id: 'moonwalk',  rarity: 'R',   name: '垂見のムーンウォーク',         kind: 'passive',
       desc: 'この駒の行動マスが常に+1される。' },
     { id: 'phoenix',   rarity: 'R',   name: '桃子のフェニックス',           kind: 'reactive', once: true,
@@ -836,8 +836,6 @@ function loadWeaponTable(url) {
         .then(function(t) { return t ? applyWeaponTable(t) : 0; })
         .catch(function() { return 0; });
 }
-/* 【ファンネル石井】の抽選に混ぜるハズレの枚数 */
-const FUNNEL_BLANKS = 3;
 
 /* 駒が実際に使う武器ID。
    ・【パクリ大国代表村上】はコピー先の武器として振る舞う
@@ -1130,15 +1128,16 @@ const RULES = (function() {
         let v = (s.role === 'mega') ? 6 : 4;
         const e = effWp(s);
         if (e === 'moonwalk') v += 1;
-        if (e === 'zutai') v += 2;
         g.soldiers.forEach(function(o) {
             if (!o.alive) return;
             const oe = effWp(o);
             const ally = (o.team === s.team);
             if (oe === 'charisma' && ally) v += 1;
+            if (oe === 'zutai' && ally) v += 1;
             if (oe === 'onnabancho' && !ally && s.sex === 'F') v -= 1;
         });
-        v -= Number((g.zutaiDown && g.zutaiDown[s.team]) || 0);
+        /* 【図体のでかい関原】の装備者が倒れた後は、味方全員 -2 */
+        v -= 2 * Number((g.zutaiDown && g.zutaiDown[s.team]) || 0);
         if (virginHit(g, s)) v -= 2;
         return Math.max(0, v);
     }
@@ -1188,7 +1187,7 @@ const RULES = (function() {
         g.log.push(msg);
         if (ve === 'zutai') {
             g.zutaiDown[v.team] = Number(g.zutaiDown[v.team] || 0) + 1;
-            g.log.push('💥 図体のでかい関原を持つ ' + v.name + ' が倒れた。以後ゲーム終了まで' + JPN[v.team] + '全員の行動マス -1');
+            g.log.push('💥 図体のでかい関原を持つ ' + v.name + ' が倒れた。以後ゲーム終了まで' + JPN[v.team] + '全員の行動マス -2');
         }
         /* 【桃子のフェニックス】自分自身を本陣で復活（旗持ちの撃破は復活不可＝その時点で決着） */
         if (ve === 'phoenix' && !opts.noRevive && v.role !== 'flag' && !weaponSpent(v, WP.phoenix)) {
@@ -1429,27 +1428,25 @@ const RULES = (function() {
         const foe = OTHER[s.team];
 
         if (w.id === 'funnel') {
-            /* 生存中の相手全員 ＋ ハズレ3枚 から1枚を引く。ハズレでも自分は消滅 */
+            /* 生存中の相手から1人を無作為に選んで撃破する */
             const enemies = g.soldiers.filter(function(o) { return o.alive && o.team === foe; });
-            const pick = Math.floor(Math.random() * (enemies.length + FUNNEL_BLANKS));
+            if (!enemies.length) return { ok: false, err: '対象がいません' };
             markWeaponUsed(s, 'funnel');
-            const v = pick < enemies.length ? enemies[pick] : null;
-            setPop(g, 'funnel', s, v ? v.name + ' を撃破' : 'ハズレ…');
+            const v = enemies[Math.floor(Math.random() * enemies.length)];
+            setPop(g, 'funnel', s, v.name + ' を撃破');
             g.log.push('✨ ファンネル石井発動！ ' + plbl(s) + ' が自らを生贄に捧げた');
             killPiece(g, s, '☠ ' + plbl(s) + ' は消滅した', { noRevive: true });
-            if (v) killPiece(g, v, '🎯 無作為に選ばれた ' + plbl(v) + ' が撃破された', { killer: s });
-            else g.log.push('🎯 抽選の結果はハズレだった');
+            killPiece(g, v, '🎯 無作為に選ばれた ' + plbl(v) + ' が撃破された', { killer: s });
             resolveWins(g);
             trimLog(g); return { ok: true };
         }
         if (w.id === 'hardgel') {
-            const v = getS(g, target);
-            if (!v || !v.alive || v.team !== foe) return { ok: false, err: '対象の相手の駒を選んでください' };
-            if (!visibleSquares(g, s.team).has(v.pos)) return { ok: false, err: '見えている相手しか対象にできません' };
             markWeaponUsed(s, 'hardgel');
-            v.stun = true;
-            setPop(g, 'hardgel', s, v.name + ' を固めた');
-            g.log.push('💈 小野寺のハードジェル！ ' + plbl(v) + ' は次のターン行動不能');
+            const men = g.soldiers.filter(function(o) { return o.alive && o.team === foe && o.sex === 'M'; });
+            men.forEach(function(o) { o.stun = true; });
+            setPop(g, 'hardgel', s, men.length ? JPN[foe] + 'の男 ' + men.length + '人を固めた' : '対象の男がいない');
+            g.log.push('💈 小野寺のハードジェル！ ' + JPN[foe] + 'の【男】' +
+                (men.length ? '（' + men.map(function(o) { return o.name; }).join('・') + '）は次のターン行動不能' : 'は残っていなかった'));
             trimLog(g); return { ok: true };
         }
         if (w.id === 'daichari') {
@@ -3413,7 +3410,7 @@ if (typeof module !== 'undefined' && module.exports) {
         var chips = list.map(function(e) {
             var cls = e.mine ? 'me' : 'foe';
             if (e.wp === 'zutaiDown')
-                return '<span class="fx ' + cls + '">' + JPN[e.team] + ' 全員 −' + (e.count || 1) + '（図体のでかい関原）</span>';
+                return '<span class="fx ' + cls + '">' + JPN[e.team] + ' 全員 −' + (2 * (e.count || 1)) + '（図体のでかい関原）</span>';
             if (e.wp === 'nonokaArmed')
                 return '<span class="fx ' + cls + '">💣 ' + JPN[e.team] + esc(e.name) + '：ノノカ起爆待ち</span>';
             if (e.wp === 'maebaDeclared' || e.wp === 'maebaReady')
@@ -3673,7 +3670,7 @@ if (typeof module !== 'undefined' && module.exports) {
             renderAll();
             return;
         }
-        if (w.id === 'hardgel' || w.id === 'daichari') { startAim(s.sid, 'enemy', '対象にする相手の駒をタップしてください'); return; }
+        if (w.id === 'daichari') { startAim(s.sid, 'enemy', '対象にする相手の駒をタップしてください'); return; }
         if (w.id === 'shuchi') {
             if (!RULES.shuchiDests(APP.g, s).length) { hint('自分の縦横1マス隣に空きマスがありません'); return; }
             var fs = APP.g.soldiers.filter(function(o) { return o.alive && o.team === s.team && o.sid !== s.sid && o.sex === 'F'; });
@@ -5133,9 +5130,9 @@ function evalState(g, team) {
 // ---------- active weapon usage ----------
 /* 武器ごとの「持っている駒の価値」への上乗せ（AIの駒評価・村上のコピー先選び・おまかせ編成で使う） */
 const WEAPON_VALUE = {
-  iincho: 1500, charisma: 1100, iemuri: 900, maeba: 850, zutai: 800, nonoka: 650, funnel: 600,
-  toyoko: 500, onnabancho: 480, ikkun: 470, aga: 450, phoenix: 430, virgin: 400, moonwalk: 380,
-  hardgel: 360, daichari: 330, chinbo: 300, ogoru: 260, shuchi: 150, shinasadame: 80, pakuri: 0
+  iincho: 1500, charisma: 1100, zutai: 1050, iemuri: 900, maeba: 850, nonoka: 650, funnel: 700,
+  hardgel: 520, toyoko: 500, onnabancho: 480, ikkun: 470, aga: 450, phoenix: 430, virgin: 400,
+  moonwalk: 380, daichari: 330, chinbo: 300, ogoru: 260, shuchi: 150, shinasadame: 80, pakuri: 0
 };
 function pieceValue(s) {
   if (!s) return 0;
@@ -5176,10 +5173,10 @@ function weaponActionCandidates(g, team, tactic) {
     const w = e ? WP[e] : null;
     if (!w || w.kind !== 'active') return;
     if (weaponSpent(s, w) || s.frozen || s.nonokaArmed) return;
-    if (w.id === 'hardgel' || w.id === 'daichari') {
+    if (w.id === 'daichari') {
       g.soldiers.forEach(v => {
         if (!v.alive || v.team !== foe || !vis.has(v.pos)) return;
-        if (w.id === 'daichari' && (SQ[v.pos].kind === 'T' || !corrIndex(v.pos))) return;
+        if (SQ[v.pos].kind === 'T' || !corrIndex(v.pos)) return;
         out.push({ kind: 'use', sid: s.sid, wp: w.id, target: v.sid });
       });
     } else if (w.id === 'shuchi') {
@@ -5209,7 +5206,7 @@ function scoreWeaponAction(g, action, team, tactic) {
   if (action.wp === 'funnel') {
     const enemies = aliveList(g, foe);
     if (!enemies.length) return -1e18;
-    const n = enemies.length + FUNNEL_BLANKS;
+    const n = enemies.length;
     const avg = enemies.reduce((sum, v) => sum + pieceValue(v), 0) / n;
     const flagChance = enemies.some(v => v.role === 'flag') ? (1 / n) : 0;
     const behind = RULES.aliveCount(g, team) < RULES.aliveCount(g, foe) ? 420 : 0;
@@ -5219,6 +5216,11 @@ function scoreWeaponAction(g, action, team, tactic) {
     /* 潜伏者の数は分からないので「見えていない敵の数」から期待値を見積もる */
     const unseen = aliveList(g, foe).filter(v => !vis.has(v.pos)).length;
     return unseen >= 2 ? unseen * 170 - 120 : -1e18;
+  }
+  if (action.wp === 'hardgel') {
+    /* 相手の男を全員止める。止められる人数がそのまま値打ち */
+    const men = aliveList(g, foe).filter(v => v.sex === 'M');
+    return men.length ? men.reduce((sum, v) => sum + pieceValue(v), 0) * 0.16 : -1e18;
   }
   if (action.wp === 'ogoru') {
     const n = aliveList(g, team).filter(v => v.year === 80 && !v.frozen).length;
@@ -5244,7 +5246,7 @@ function scoreWeaponAction(g, action, team, tactic) {
   let sc = evalState(gc, team) - before;
   if (gc.phase === 'over' && gc.winner === team) sc += 1e7;
   if (gc.phase === 'over' && gc.winner === foe) sc -= 1e7;
-  if (action.wp === 'hardgel') sc += pieceValue(RULES.getS(g, action.target)) * 0.2;
+
   if (action.wp === 'daichari') sc += 20;
   return sc;
 }

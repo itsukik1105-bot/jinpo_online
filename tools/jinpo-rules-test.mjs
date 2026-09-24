@@ -69,7 +69,8 @@ g_('装備データ');
 {
     ok(WEAPONS.length === 21, '武器は21種');
     const n = r => WEAPONS.filter(w => w.rarity === r).length;
-    ok(n('UR') === 1 && n('SSR') === 3 && n('SR') === 5 && n('R') === 12, '内訳 UR1/SSR3/SR5/R12');
+    ok(n('UR') === 1 && n('SSR') === 3 && n('SR') === 8 && n('R') === 9, '内訳 UR1/SSR3/SR8/R9');
+    ok(['funnel', 'zutai', 'hardgel'].every(id => WP[id].rarity === 'SR'), '石井・関原・小野寺の3種はSR');
     const ex = { '石井': 'funnel', '関原': 'zutai', '小野寺': 'hardgel' };
     ok(['A', 'B', 'C'].every(L => ROSTER[L].every(m => {
         const ids = weaponsFor(L, m).map(w => w.id);
@@ -88,8 +89,11 @@ g_('常時効果（行動マス）');
 {
     let g = mk(); ok(S_(g, '石井').steps === 6 && S_(g, '内藤').steps === 4, '基本 メガホン6 / 兵4');
     g = mk({ '内藤': 'moonwalk' }); ok(S_(g, '内藤').steps === 5, 'ムーンウォーク +1');
-    g = mk({ '内藤': 'zutai' }); ok(S_(g, '内藤').steps === 6 && S_(g, '純平').steps === 4, '図体のでかい関原 本人+2');
-    S_(g, '内藤').alive = false; g.zutaiDown.blue = 1; refresh(g); ok(S_(g, '純平').steps === 3, '装備者が倒れると味方-1');
+    g = RULES.newGame(squad('A', 'blue'), squad('B', 'red', { '関原': 'zutai' }), 'red', { blue: 'A', red: 'B' });
+    ok(S_(g, '武').steps === 5 && S_(g, '関原').steps === 7, '図体のでかい関原 味方全員+1（本人も）');
+    g.activeTeam = 'blue'; refresh(g); ok(S_(g, '内藤').steps === 4, '関原は相手には影響しない');
+    S_(g, '関原').alive = false; g.zutaiDown.red = 1; g.activeTeam = 'red'; refresh(g);
+    ok(S_(g, '武').steps === 2, '装備者が倒れると味方-2');
     g = mk({ '内藤': 'charisma' }); ok(S_(g, '純平').steps === 5 && S_(g, '石井').steps === 7, 'カリスマ 味方全員+1');
     g = mk({ '内藤': 'onnabancho' }, {}, 'red'); ok(S_(g, '宮永').steps === 3 && S_(g, '武').steps === 4, '女番長 相手の女-1');
     g = mk({ '内藤': 'virgin' }, {}, 'red'); park(g, ['内藤', '武', '宮永']);
@@ -143,25 +147,31 @@ g_('移動と撃破');
 /* ================= 任意発動 ================= */
 g_('任意発動の武器');
 {
-    let blanks = 0;
-    for (let i = 0; i < 300; i++) {
+    let miss = 0, hitNames = new Set();
+    for (let i = 0; i < 200; i++) {
         const g = mk({ '石井': 'funnel' });
         const before = RULES.aliveCount(g, 'red');
         RULES.useWeapon(g, S_(g, '石井').sid);
         if (S_(g, '石井').alive) { fail++; console.log('  ❌ ファンネルで自分が残った'); break; }
-        if (RULES.aliveCount(g, 'red') === before) blanks++;
+        if (RULES.aliveCount(g, 'red') === before) miss++;
+        g.soldiers.filter(o => o.team === 'red' && !o.alive).forEach(o => hitNames.add(o.name));
     }
-    ok(blanks > 40 && blanks < 130, 'ファンネル ハズレ率がおよそ3/11（' + blanks + '/300）');
+    ok(miss === 0, 'ファンネル 必ず相手を1人撃破する（ハズレ枠なし）');
+    ok(hitNames.size >= 5, 'ファンネル 撃破される相手は毎回変わる（' + hitNames.size + '種類）');
 }
 {
-    const g = mk({ '小野寺': 'x' });   /* 小野寺はAにいないのでハードジェルは別途 */
-    const g2 = RULES.newGame(squad('C', 'blue', { '小野寺': 'hardgel' }), squad('B', 'red'), 'blue', { blue: 'C', red: 'B' });
-    park(g2, ['小野寺', '武']); S_(g2, '小野寺').pos = 'A20'; S_(g2, '武').pos = 'A22'; refresh(g2);
-    ok(RULES.useWeapon(g2, S_(g2, '小野寺').sid, S_(g2, '武').sid).ok, 'ハードジェル 男にも効く');
-    RULES.endTurn(g2);
-    ok(S_(g2, '武').steps === 0 && !RULES.stepMove(g2, S_(g2, '武').sid, 'A20').ok, '固められた駒は動けない');
-    RULES.endTurn(g2); RULES.endTurn(g2);
-    ok(S_(g2, '武').steps > 0, '1ターンで解ける');
+    const g = RULES.newGame(squad('C', 'blue', { '小野寺': 'hardgel' }), squad('B', 'red'), 'blue', { blue: 'C', red: 'B' });
+    ok(RULES.useWeapon(g, S_(g, '小野寺').sid).ok, 'ハードジェル 対象を選ばずに発動できる');
+    const men = g.soldiers.filter(o => o.team === 'red' && o.sex === 'M');
+    const women = g.soldiers.filter(o => o.team === 'red' && o.sex === 'F');
+    ok(men.length > 1 && men.every(o => o.stun), '相手の男が全員まとめて対象になる');
+    ok(women.every(o => !o.stun), '相手の女には効かない');
+    ok(g.soldiers.filter(o => o.team === 'blue').every(o => !o.stun), '味方には効かない');
+    RULES.endTurn(g);
+    ok(men.every(o => o.steps === 0) && !RULES.stepMove(g, men[0].sid, 'A20').ok, '固められた駒は動けない');
+    ok(women.some(o => o.steps > 0), '女は普通に動ける');
+    RULES.endTurn(g); RULES.endTurn(g);
+    ok(men.every(o => o.steps > 0), '1ターンで解ける');
 }
 {
     const g = mk({ '内藤': 'daichari' }); park(g, ['内藤', '市毛']);
