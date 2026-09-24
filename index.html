@@ -829,12 +829,23 @@ function applyWeaponTable(text) {
 }
 /* 表で「使う」にした武器だけ */
 function activeWeapons() { return WEAPONS.filter(function(w) { return w.enabled; }); }
-function loadWeaponTable(url) {
-    if (typeof fetch !== 'function') return Promise.resolve(0);
-    return fetch(url || 'weapons.csv', { cache: 'no-cache' })
+/* 武器表の置き場所。
+   1つ目はGoogleスプレッドシート（ウェブに公開したCSV）。ここを編集すると次回の読み込みで反映される。
+   読めなかった場合は、ゲームと同じ場所にある weapons.csv を使う（通信が塞がれていても遊べるように）。 */
+const WEAPON_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRWLm7teJSMDUoRQSjYVnGZc4VYZzFldTWnB4mbkE7oXLPjxqWCR61_J6jZD3_Kv1LKRbSykq_L9v2G/pub?output=csv';
+function fetchWeaponCsv(url) {
+    if (typeof fetch !== 'function' || !url) return Promise.resolve(0);
+    var u = url + (url.indexOf('?') >= 0 ? '&' : '?') + '_=' + Date.now();
+    return fetch(u, { cache: 'no-cache' })
         .then(function(r) { return r.ok ? r.text() : null; })
         .then(function(t) { return t ? applyWeaponTable(t) : 0; })
         .catch(function() { return 0; });
+}
+function loadWeaponTable(url) {
+    if (url) return fetchWeaponCsv(url);
+    return fetchWeaponCsv(WEAPON_SHEET_URL).then(function(n) {
+        return n ? n : fetchWeaponCsv('weapons.csv');
+    });
 }
 
 /* 駒が実際に使う武器ID。
